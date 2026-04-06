@@ -1,0 +1,78 @@
+server:
+  port: 9900
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+file:
+  upload:
+    path: ./uploads
+    allowed-extensions: txt,md
+
+milvus:
+  host: localhost
+  port: 19530
+  username: ""
+  password: ""
+  database: default
+  timeout: 10000
+
+# Spring AI Alibaba DashScope 配置
+spring:
+  ai:
+    dashscope:
+      api-key: sk-31b9d93006d340f08c7bbe5da6a82cc8  # 从环境变量读取或使用默认值
+      chat:
+        options:
+          timeout: 180000  # 超时时间180秒（3分钟）
+      retry:
+        max-attempts: 3  # 最大重试次数
+        backoff:
+          initial-interval: 2000  # 初始重试间隔2秒
+          multiplier: 2  # 重试间隔倍数
+          max-interval: 10000  # 最大重试间隔10秒
+    
+    # Spring AI MCP 客户端配置
+    # 如果使用mock数据，请注释这部分内容
+#    mcp:
+#      client:
+#        enabled: true
+#        name: tencent-mcp-server
+#        version: 1.0.0
+#        request-timeout: 60s
+#        type: ASYNC
+#        sse:
+#          connections:
+#            tencent-cls:
+#              url: https://mcp-api.tencent-cloud.com
+#              sse-endpoint: /sse/27a4d6a282c01665  # 完整的SSE端点路径
+
+# 阿里云 DashScope Embedding API 配置
+dashscope:
+  api:
+    key: sk-31b9d93006d340f08c7bbe5da6a82cc8  # 从环境变量读取或使用默认值（用于自定义配置）
+  embedding:
+    model: text-embedding-v4  # 阿里云文本向量化模型
+
+# 文档分片配置
+document:
+  chunk:
+    max-size: 800  # 每个分片最大字符数
+    overlap: 100   # 分片之间的重叠字符数
+
+# RAG 配置
+rag:
+  top-k: 3  # 检索返回的最相似文档数量
+  model: "qwen3-max"  # 大语言模型名称
+
+# Prometheus 配置
+prometheus:
+  base-url: http://localhost:9090
+  timeout: 10  # 超时时间（秒）
+  mock-enabled: true  # 是否启用 Mock 模式（用于测试）
+
+# CLS 云日志服务配置
+cls:
+  mock-enabled: true  # 是否启用 Mock 模式（用于测试，设为 true 返回与告警关联的模拟日志数据）
