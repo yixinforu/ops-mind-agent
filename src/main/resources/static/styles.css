@@ -902,6 +902,117 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+/* 删除确认弹窗 */
+.confirm-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(32, 33, 36, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 11000;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.confirm-dialog-overlay.show {
+    opacity: 1;
+}
+
+.confirm-dialog {
+    width: min(420px, 100%);
+    background: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 16px;
+    box-shadow: 0 18px 40px rgba(60, 64, 67, 0.26);
+    padding: 18px 20px 16px;
+    transform: translateY(8px) scale(0.98);
+    opacity: 0;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+    outline: none;
+}
+
+.confirm-dialog-overlay.show .confirm-dialog {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.confirm-dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.confirm-dialog-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(234, 67, 53, 0.12);
+    color: #d93025;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.confirm-dialog-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.confirm-dialog-title {
+    font-size: 16px;
+    line-height: 1.4;
+    font-weight: 600;
+    color: #202124;
+}
+
+.confirm-dialog-message {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #5f6368;
+    margin-bottom: 16px;
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.confirm-dialog-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.confirm-dialog-btn.cancel {
+    background: #f1f3f4;
+    color: #3c4043;
+}
+
+.confirm-dialog-btn.cancel:hover {
+    background: #e8eaed;
+}
+
+.confirm-dialog-btn.danger {
+    background: #ea4335;
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(217, 48, 37, 0.3);
+}
+
+.confirm-dialog-btn.danger:hover {
+    background: #d93025;
+    box-shadow: 0 4px 10px rgba(217, 48, 37, 0.25);
+}
+
 @keyframes slideIn {
     from {
         transform: translateX(100%);

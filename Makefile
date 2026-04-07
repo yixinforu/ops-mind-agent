@@ -9,6 +9,7 @@ HEALTH_CHECK_API = $(SERVER_URL)/milvus/health
 DOCKER_COMPOSE_FILE = vector-database.yml
 DOCKER_COMPOSE_CMD := $(shell if command -v docker-compose >/dev/null 2>&1; then echo docker-compose; else echo "docker compose"; fi)
 MILVUS_CONTAINER = milvus-standalone
+REDIS_CONTAINER = redis-standalone
 
 # 颜色输出
 GREEN = \033[0;32m
@@ -24,7 +25,7 @@ help:
 	@echo ""
 	@echo "可用命令："
 	@echo "  $(YELLOW)make init$(NC)    - 🚀 一键初始化（启动Docker → 启动服务 → 上传文档）"
-	@echo "  $(YELLOW)make up$(NC)      - 启动 Docker Compose（Milvus 向量数据库）"
+	@echo "  $(YELLOW)make up$(NC)      - 启动 Docker Compose（Milvus + Redis）"
 	@echo "  $(YELLOW)make down$(NC)    - 停止 Docker Compose"
 	@echo "  $(YELLOW)make status$(NC)  - 查看 Docker 容器状态"
 	@echo "  $(YELLOW)make start$(NC)   - 启动 Spring Boot 服务（后台运行）"
@@ -43,7 +44,7 @@ help:
 init:
 	@echo "$(GREEN)🚀 开始一键初始化 SuperBizAgent...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)步骤 1/4: 启动 Docker Compose（Milvus 向量数据库）$(NC)"
+	@echo "$(YELLOW)步骤 1/4: 启动 Docker Compose（Milvus + Redis）$(NC)"
 	@$(MAKE) up
 	@echo ""
 	@echo "$(YELLOW)步骤 2/4: 启动 Spring Boot 服务$(NC)"
@@ -206,47 +207,86 @@ test-upload:
 		echo "$(RED)测试文件不存在$(NC)"; \
 	fi
 
-# 启动 Docker Compose（智能检测，避免重复启动）
+# 启动 Docker Compose（优先复用已有容器，避免名称冲突）
 up:
 	@echo "$(YELLOW)🐳 检查 Docker 容器状态...$(NC)"
 	@if [ ! -f "$(DOCKER_COMPOSE_FILE)" ]; then \
 		echo "$(RED)❌ Docker Compose 文件不存在: $(DOCKER_COMPOSE_FILE)$(NC)"; \
 		exit 1; \
 	fi
-	@if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then \
-		echo "$(GREEN)✅ Milvus 容器已经在运行中$(NC)"; \
-		echo "$(YELLOW)📋 当前运行的容器:$(NC)"; \
-		docker ps --filter "name=milvus" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"; \
-	else \
-		echo "$(YELLOW)🚀 启动 Docker Compose...$(NC)"; \
-		if ! $(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) up -d; then \
+	@milvus_running=0; \
+	redis_running=0; \
+	if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then milvus_running=1; fi; \
+	if docker ps --format '{{.Names}}' | grep -q "^$(REDIS_CONTAINER)$$"; then redis_running=1; fi; \
+	if [ $$milvus_running -eq 1 ] && [ $$redis_running -eq 1 ]; then \
+		echo "$(GREEN)✅ 复用已有容器：Milvus 与 Redis 已在运行$(NC)"; \
+		echo ""; \
+		echo "$(GREEN)📋 运行中的容器:$(NC)"; \
+		docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "NAMES|milvus|redis"; \
+		echo ""; \
+		echo "$(GREEN)🌐 服务访问地址:$(NC)"; \
+		echo "   Milvus: localhost:19530"; \
+		echo "   Redis: localhost:6379"; \
+		echo "   Attu (Web UI): http://localhost:8000"; \
+		echo "   MinIO: http://localhost:9001 (admin/minioadmin)"; \
+		exit 0; \
+	fi
+	@echo "$(YELLOW)🔧 尝试启动已存在但未运行的容器...$(NC)"
+	@if docker ps -a --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then \
+		docker start $(MILVUS_CONTAINER) >/dev/null 2>&1 || true; \
+	fi
+	@if docker ps -a --format '{{.Names}}' | grep -q "^$(REDIS_CONTAINER)$$"; then \
+		docker start $(REDIS_CONTAINER) >/dev/null 2>&1 || true; \
+	fi
+	@missing_services=""; \
+	if ! docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then \
+		missing_services="$$missing_services standalone attu"; \
+	fi; \
+	if ! docker ps --format '{{.Names}}' | grep -q "^$(REDIS_CONTAINER)$$"; then \
+		missing_services="$$missing_services redis"; \
+	fi; \
+	if [ -n "$$missing_services" ]; then \
+		echo "$(YELLOW)🚀 启动缺失组件:$$missing_services$(NC)"; \
+		if ! $(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) up -d $$missing_services; then \
 			echo ""; \
 			echo "$(RED)❌ Docker Compose 启动命令执行失败$(NC)"; \
 			echo "$(YELLOW)请直接查看上面的报错信息，或执行: $(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) logs --tail=200$(NC)"; \
 			exit 1; \
 		fi; \
-		echo ""; \
-		echo "$(YELLOW)⏳ 等待容器启动...$(NC)"; \
-		sleep 5; \
-		if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then \
+	fi
+	@echo ""
+	@echo "$(YELLOW)⏳ 等待关键容器就绪（Milvus + Redis）...$(NC)"
+	@max_attempts=30; \
+	attempt=0; \
+	while [ $$attempt -lt $$max_attempts ]; do \
+		milvus_ready=0; \
+		redis_ready=0; \
+		if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then milvus_ready=1; fi; \
+		if docker ps --format '{{.Names}}' | grep -q "^$(REDIS_CONTAINER)$$"; then redis_ready=1; fi; \
+		if [ $$milvus_ready -eq 1 ] && [ $$redis_ready -eq 1 ]; then \
 			echo "$(GREEN)✅ Docker Compose 启动成功！$(NC)"; \
 			echo ""; \
 			echo "$(GREEN)📋 运行中的容器:$(NC)"; \
-			docker ps --filter "name=milvus" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"; \
+			docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "NAMES|milvus|redis"; \
 			echo ""; \
 			echo "$(GREEN)🌐 服务访问地址:$(NC)"; \
 			echo "   Milvus: localhost:19530"; \
+			echo "   Redis: localhost:6379"; \
 			echo "   Attu (Web UI): http://localhost:8000"; \
 			echo "   MinIO: http://localhost:9001 (admin/minioadmin)"; \
-		else \
-			echo "$(RED)❌ 容器启动失败，当前状态如下:$(NC)"; \
-			$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) ps; \
-			echo ""; \
-			echo "$(YELLOW)最近日志（最后 100 行）:$(NC)"; \
-			$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) logs --tail=100; \
-			exit 1; \
+			exit 0; \
 		fi; \
-	fi
+		attempt=$$((attempt + 1)); \
+		printf "$(YELLOW)   等待中... [$$attempt/$$max_attempts]$(NC)\r"; \
+		sleep 1; \
+	done; \
+	echo ""; \
+	echo "$(RED)❌ 关键容器未全部就绪（需要 Milvus + Redis）$(NC)"; \
+	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) ps; \
+	echo ""; \
+	echo "$(YELLOW)最近日志（最后 100 行）:$(NC)"; \
+	$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) logs --tail=100; \
+	exit 1
 
 # 停止 Docker Compose
 down:
@@ -255,24 +295,24 @@ down:
 		echo "$(RED)❌ Docker Compose 文件不存在: $(DOCKER_COMPOSE_FILE)$(NC)"; \
 		exit 1; \
 	fi
-	@if docker ps --format '{{.Names}}' | grep -q "milvus"; then \
+	@if docker ps --format '{{.Names}}' | grep -Eq "milvus|redis"; then \
 		$(DOCKER_COMPOSE_CMD) -f $(DOCKER_COMPOSE_FILE) down; \
 		echo "$(GREEN)✅ Docker Compose 已停止$(NC)"; \
 	else \
-		echo "$(YELLOW)⚠️  没有运行中的 Milvus 容器$(NC)"; \
+		echo "$(YELLOW)⚠️  没有运行中的 Milvus/Redis 容器$(NC)"; \
 	fi
 
 # 查看 Docker 容器状态
 status:
 	@echo "$(YELLOW)📊 Docker 容器状态:$(NC)"
 	@echo ""
-	@if docker ps -a --format '{{.Names}}' | grep -q "milvus"; then \
-		docker ps -a --filter "name=milvus" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"; \
+	@if docker ps -a --format '{{.Names}}' | grep -Eq "milvus|redis"; then \
+		docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "NAMES|milvus|redis"; \
 		echo ""; \
-		running=$$(docker ps --filter "name=milvus" --format '{{.Names}}' | wc -l | tr -d ' '); \
-		total=$$(docker ps -a --filter "name=milvus" --format '{{.Names}}' | wc -l | tr -d ' '); \
+		running=$$(docker ps --format '{{.Names}}' | grep -E "milvus|redis" | wc -l | tr -d ' '); \
+		total=$$(docker ps -a --format '{{.Names}}' | grep -E "milvus|redis" | wc -l | tr -d ' '); \
 		echo "$(GREEN)运行中: $$running / $$total$(NC)"; \
 	else \
-		echo "$(YELLOW)⚠️  没有找到 Milvus 相关容器$(NC)"; \
+		echo "$(YELLOW)⚠️  没有找到 Milvus/Redis 相关容器$(NC)"; \
 		echo "$(YELLOW)提示: 运行 'make up' 启动容器$(NC)"; \
 	fi

@@ -130,6 +130,51 @@ public class ChatController {
     }
 
     /**
+     * 保存前端“近期对话”列表（用于跨浏览器共享）
+     */
+    @PostMapping("/chat/histories")
+    public ResponseEntity<ApiResponse<String>> saveChatHistories(@RequestBody List<Map<String, Object>> histories) {
+        try {
+            chatSessionService.saveUiChatHistories(histories);
+            return ResponseEntity.ok(ApiResponse.success("历史对话已保存"));
+        } catch (Exception e) {
+            logger.error("保存历史对话列表失败", e);
+            return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取前端“近期对话”列表（用于跨浏览器读取）
+     */
+    @GetMapping("/chat/histories")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getChatHistories() {
+        try {
+            List<Map<String, Object>> histories = chatSessionService.loadUiChatHistories();
+            return ResponseEntity.ok(ApiResponse.success(histories));
+        } catch (Exception e) {
+            logger.error("获取历史对话列表失败", e);
+            return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取指定会话的完整消息历史（用于前端会话详情展示）
+     */
+    @GetMapping("/chat/session/messages/{sessionId}")
+    public ResponseEntity<ApiResponse<List<Map<String, String>>>> getSessionMessages(@PathVariable String sessionId) {
+        try {
+            Optional<List<Map<String, String>>> messagesOptional = chatSessionService.getSessionMessages(sessionId);
+            if (messagesOptional.isPresent()) {
+                return ResponseEntity.ok(ApiResponse.success(messagesOptional.get()));
+            }
+            return ResponseEntity.ok(ApiResponse.error("会话不存在"));
+        } catch (Exception e) {
+            logger.error("获取会话消息失败 - SessionId: {}", sessionId, e);
+            return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
      * ReactAgent 对话接口（SSE 流式模式，支持多轮对话，支持自动工具调用，例如获取当前时间，查询日志，告警等）
      * 支持 session 管理，保留对话历史
      */

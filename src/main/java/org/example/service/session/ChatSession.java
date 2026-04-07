@@ -22,6 +22,27 @@ public class ChatSession {
         this.lock = new ReentrantLock();
     }
 
+    /**
+     * 基于已有会话快照恢复会话对象
+     */
+    public ChatSession(String sessionId, long createTime, List<Map<String, String>> messageHistory) {
+        this.sessionId = sessionId;
+        this.createTime = createTime > 0 ? createTime : System.currentTimeMillis();
+        this.messageHistory = new ArrayList<>();
+        if (messageHistory != null) {
+            for (Map<String, String> msg : messageHistory) {
+                if (msg == null) {
+                    continue;
+                }
+                Map<String, String> copied = new HashMap<>();
+                copied.put("role", msg.get("role"));
+                copied.put("content", msg.get("content"));
+                this.messageHistory.add(copied);
+            }
+        }
+        this.lock = new ReentrantLock();
+    }
+
     public String getSessionId() {
         return sessionId;
     }
@@ -42,14 +63,6 @@ public class ChatSession {
             assistantMsg.put("role", "assistant");
             assistantMsg.put("content", aiAnswer);
             messageHistory.add(assistantMsg);
-
-            int maxMessages = maxWindowSize * 2;
-            while (messageHistory.size() > maxMessages) {
-                messageHistory.remove(0);
-                if (!messageHistory.isEmpty()) {
-                    messageHistory.remove(0);
-                }
-            }
         } finally {
             lock.unlock();
         }
@@ -58,7 +71,31 @@ public class ChatSession {
     public List<Map<String, String>> getHistory() {
         lock.lock();
         try {
-            return new ArrayList<>(messageHistory);
+            List<Map<String, String>> copiedHistory = new ArrayList<>();
+            for (Map<String, String> msg : messageHistory) {
+                Map<String, String> copied = new HashMap<>();
+                copied.put("role", msg.get("role"));
+                copied.put("content", msg.get("content"));
+                copiedHistory.add(copied);
+            }
+            return copiedHistory;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * 获取最近窗口的历史消息（按消息对裁剪）。
+     */
+    public List<Map<String, String>> getRecentHistory(int maxWindowSize) {
+        lock.lock();
+        try {
+            List<Map<String, String>> fullHistory = getHistory();
+            int maxMessages = Math.max(1, maxWindowSize) * 2;
+            if (fullHistory.size() <= maxMessages) {
+                return fullHistory;
+            }
+            return new ArrayList<>(fullHistory.subList(fullHistory.size() - maxMessages, fullHistory.size()));
         } finally {
             lock.unlock();
         }

@@ -21,6 +21,12 @@ milvus:
 
 # Spring AI Alibaba DashScope 配置
 spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ""
+      database: 0
   ai:
     dashscope:
       api-key: sk-31b9d93006d340f08c7bbe5da6a82cc8  # 从环境变量读取或使用默认值
@@ -66,6 +72,12 @@ document:
 rag:
   top-k: 3  # 检索返回的最相似文档数量
   model: "qwen3-max"  # 大语言模型名称
+
+# 会话配置
+chat:
+  session:
+    ttl-minutes: 10080
+    max-window-size: 6
 
 # Prometheus 配置
 prometheus:
