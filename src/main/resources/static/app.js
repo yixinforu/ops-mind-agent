@@ -1106,7 +1106,11 @@ class SuperBizAgentApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                }
+                },
+                // 绑定当前会话ID，确保 AI Ops 输出可并入同一会话上下文
+                body: JSON.stringify({
+                    Id: this.sessionId
+                })
             });
 
             if (!response.ok) {
@@ -1155,7 +1159,12 @@ class SuperBizAgentApp {
                             console.log('[AI Ops SSE] 事件类型:', currentEvent);
                             continue;
                         } else if (line.startsWith('data:')) {
-                            const rawData = line.substring(5).trim();
+                            // 不要 trim，避免丢失 Markdown 关键换行
+                            let rawData = line.substring(5);
+                            // 兼容 "data: xxx" 与 "data:xxx"
+                            if (rawData.startsWith(' ')) {
+                                rawData = rawData.substring(1);
+                            }
                             console.log('[AI Ops SSE] 数据:', rawData, ', currentEvent:', currentEvent);
                             
                             // 解析可能包含多个JSON对象的数据
@@ -1170,6 +1179,8 @@ class SuperBizAgentApp {
                                             const sseMessage = JSON.parse(jsonStr);
                                             if (sseMessage.type === 'content') {
                                                 fullResponse += sseMessage.data || '';
+                                            } else if (sseMessage.type === 'progress') {
+                                                this.updateAIOpsProgress(loadingMessageElement, sseMessage.data || '');
                                             } else if (sseMessage.type === 'done') {
                                                 console.log('AI Ops 流完成，最终内容长度:', fullResponse.length);
                                                 this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
@@ -1203,6 +1214,8 @@ class SuperBizAgentApp {
                                             if (loadingMessageElement) {
                                                 this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
                                             }
+                                        } else if (sseMessage.type === 'progress') {
+                                            this.updateAIOpsProgress(loadingMessageElement, sseMessage.data || '');
                                         } else if (sseMessage.type === 'done') {
                                             console.log('AI Ops 流完成，最终内容长度:', fullResponse.length);
                                             this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
@@ -1251,10 +1264,51 @@ class SuperBizAgentApp {
                 messageContent.className = 'message-content';
                 messageContentWrapper.appendChild(messageContent);
             }
-            // 流式显示时使用纯文本
-            messageContent.textContent = content;
+            // 进入真正流式内容后，移除加载态布局，避免 flex 导致 Markdown 在一行显示
+            messageContent.classList.remove('loading-message-content');
+            const loadingIcon = messageContent.querySelector('.loading-spinner-icon');
+            if (loadingIcon) {
+                loadingIcon.remove();
+            }
+            // 流式阶段也进行 Markdown 渲染，避免用户长时间看到不可读的纯文本
+            const normalizedContent = this.normalizeAIOpsStreamingMarkdown(content);
+            messageContent.innerHTML = this.renderMarkdown(normalizedContent);
+            this.highlightCodeBlocks(messageContent);
             this.scrollToBottom();
         }
+    }
+
+    // 归一化 AIOps 流式 Markdown（仅用于前端预览，不修改后端原始内容）
+    normalizeAIOpsStreamingMarkdown(content) {
+        if (!content) return '';
+
+        let normalized = content.replace(/\r\n/g, '\n');
+        // 标题前缺少换行时，补齐为块级结构
+        normalized = normalized.replace(/([^\n])\s+(#{1,6}\s)/g, '$1\n\n$2');
+        // 常见无序列表（- **xxx**）前缺少换行时补齐
+        normalized = normalized.replace(/([^\n])\s+(-\s+\*\*)/g, '$1\n$2');
+        // 常见有序列表前缺少换行时补齐
+        normalized = normalized.replace(/([^\n])\s+(\d+\.\s+)/g, '$1\n$2');
+
+        return normalized;
+    }
+
+    // 更新 AIOps 阶段进度（与正文分离，避免破坏 Markdown 格式）
+    updateAIOpsProgress(messageElement, progressText) {
+        if (!messageElement || !progressText) return;
+
+        const messageContentWrapper = messageElement.querySelector('.message-content-wrapper');
+        if (!messageContentWrapper) return;
+
+        let progressDiv = messageContentWrapper.querySelector('.aiops-progress');
+        if (!progressDiv) {
+            progressDiv = document.createElement('div');
+            progressDiv.className = 'aiops-progress';
+            progressDiv.style.cssText = 'font-size:12px;color:#5f6368;margin-bottom:8px;';
+            messageContentWrapper.insertBefore(progressDiv, messageContentWrapper.firstChild);
+        }
+
+        progressDiv.textContent = progressText;
     }
 
     // 更新智能运维消息（带折叠详情）

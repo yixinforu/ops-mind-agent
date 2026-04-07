@@ -40,6 +40,18 @@ public class ChatSessionService {
                 session.getSessionId(), session.getMessagePairCount());
     }
 
+    /**
+     * 将 AI Ops 自动分析结果写入会话历史，便于后续 chat/chat_stream 继续追问时继承上下文。
+     *
+     * @param session 会话对象
+     * @param summary AI Ops 摘要文本
+     */
+    public void addAiOpsSummary(ChatSession session, String summary) {
+        session.addMessage("[系统任务] 执行 AI Ops 自动告警分析", summary, MAX_WINDOW_SIZE);
+        logger.info("会话 {} 已写入 AI Ops 摘要上下文，当前消息对数: {}",
+                session.getSessionId(), session.getMessagePairCount());
+    }
+
     public boolean clearHistory(String sessionId) {
         ChatSession session = sessions.get(sessionId);
         if (session == null) {

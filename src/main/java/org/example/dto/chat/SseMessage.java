@@ -30,4 +30,11 @@ public class SseMessage {
         message.setData(null);
         return message;
     }
+
+    public static SseMessage progress(String data) {
+        SseMessage message = new SseMessage();
+        message.setType("progress");
+        message.setData(data);
+        return message;
+    }
 }

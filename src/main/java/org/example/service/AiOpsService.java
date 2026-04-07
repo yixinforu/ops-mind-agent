@@ -16,7 +16,9 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -27,6 +29,9 @@ import java.util.Optional;
 public class AiOpsService {
 
     private static final Logger logger = LoggerFactory.getLogger(AiOpsService.class);
+    private static final int SUMMARY_MAX_CHARS = 1800;
+    private static final int SECTION_MAX_LINES = 8;
+    private static final int FALLBACK_MAX_CHARS = 1200;
 
     @Autowired
     private DateTimeTools dateTimeTools;
@@ -92,6 +97,54 @@ public class AiOpsService {
             logger.warn("未能提取到 Planner 最终报告");
             return Optional.empty();
         }
+    }
+
+    /**
+     * 创建 AIOps 流式分析 Agent
+     * 用于 /api/ai_ops 接口的实时输出场景，与 /api/chat_stream 使用相同的 stream 范式。
+     */
+    public ReactAgent createStreamingAiOpsAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
+        return ReactAgent.builder()
+                .name("ai_ops_streaming_agent")
+                .description("执行告警分析并以 Markdown 形式流式输出报告")
+                .model(chatModel)
+                .systemPrompt(buildStreamingAiOpsPrompt())
+                .methodTools(buildMethodToolsArray())
+                .tools(toolCallbacks)
+                .build();
+    }
+
+    /**
+     * 构建用于会话记忆的 AI Ops 摘要，控制长度并提取关键结论，避免占满上下文窗口。
+     *
+     * @param fullReport AI Ops 最终完整报告
+     * @return 可写入会话历史的摘要文本
+     */
+    public String buildAiOpsConversationSummary(String fullReport) {
+        if (fullReport == null || fullReport.trim().isEmpty()) {
+            return "AI Ops 分析摘要\n\n- 本次流程未生成有效报告，请重新执行 AI Ops。";
+        }
+
+        String normalizedReport = fullReport.replace("\r\n", "\n").trim();
+        Map<String, String> sections = parseSecondLevelSections(normalizedReport);
+        if (sections.isEmpty()) {
+            String fallback = truncate(normalizedReport, FALLBACK_MAX_CHARS);
+            return truncate("AI Ops 分析摘要\n\n" + fallback, SUMMARY_MAX_CHARS);
+        }
+
+        String activeAlerts = extractSectionByKeywords(sections, "活跃告警清单");
+        String rootCause = extractSectionByKeywords(sections, "告警根因分析");
+        String handling = extractSectionByKeywords(sections, "处理建议", "处理方案执行");
+        String conclusion = extractSectionByKeywords(sections, "结论");
+
+        StringBuilder summaryBuilder = new StringBuilder();
+        summaryBuilder.append("AI Ops 分析摘要\n");
+        appendSummarySection(summaryBuilder, "活跃告警", activeAlerts);
+        appendSummarySection(summaryBuilder, "根因分析", rootCause);
+        appendSummarySection(summaryBuilder, "处理建议", handling);
+        appendSummarySection(summaryBuilder, "结论", conclusion);
+
+        return truncate(summaryBuilder.toString().trim(), SUMMARY_MAX_CHARS);
     }
 
     /**
@@ -274,5 +327,127 @@ public class AiOpsService {
                 只允许在 planner_agent、executor_agent 与 FINISH 之间做出选择。
 
                 """;
+    }
+
+    /**
+     * 构建 AIOps 流式分析系统提示词
+     * 要求模型边分析边输出最终报告内容，确保前端可以实时渲染。
+     */
+    private String buildStreamingAiOpsPrompt() {
+        return """
+                你是企业级智能运维助手，需要调用工具完成告警分析，并输出结构化 Markdown 报告。
+                关键要求：
+                1. 必须优先通过工具获取真实数据，禁止编造。
+                2. 输出内容应直接是最终报告正文，支持流式增量输出，不要等待全部分析完成后一次性输出。
+                3. 禁止输出过程性口语（如“正在查询…/已获取…/接下来…”），这类信息由系统进度通道输出，不属于报告正文。
+                4. 报告格式必须为 Markdown，至少包含：
+                   - # 告警分析报告
+                   - ## 活跃告警清单
+                   - ## 告警根因分析
+                   - ## 处理建议
+                   - ## 结论
+                5. 标题、列表、表格都必须严格使用 Markdown 语法并保留必要换行。
+                6. 当工具失败或无数据时，必须在报告中明确写出“无法完成”的原因。
+                7. 调用日志相关工具时，地域默认使用 ap-guangzhou。
+                """;
+    }
+
+    private void appendSummarySection(StringBuilder summaryBuilder, String sectionTitle, String sectionContent) {
+        summaryBuilder.append("\n## ").append(sectionTitle).append("\n");
+        if (sectionContent == null || sectionContent.isBlank()) {
+            summaryBuilder.append("- 未提取到该部分，详见 AI Ops 原始报告。\n");
+            return;
+        }
+        summaryBuilder.append(sectionContent).append("\n");
+    }
+
+    private Map<String, String> parseSecondLevelSections(String markdown) {
+        Map<String, StringBuilder> sectionBuilders = new LinkedHashMap<>();
+        String currentSection = null;
+
+        String[] lines = markdown.split("\n");
+        for (String line : lines) {
+            String trimmedLine = line.trim();
+            if (trimmedLine.startsWith("## ")) {
+                currentSection = trimmedLine.substring(3).trim();
+                sectionBuilders.putIfAbsent(currentSection, new StringBuilder());
+                continue;
+            }
+
+            if (currentSection != null) {
+                sectionBuilders.get(currentSection).append(line).append("\n");
+            }
+        }
+
+        Map<String, String> sections = new LinkedHashMap<>();
+        for (Map.Entry<String, StringBuilder> entry : sectionBuilders.entrySet()) {
+            sections.put(entry.getKey(), entry.getValue().toString().trim());
+        }
+        return sections;
+    }
+
+    private String extractSectionByKeywords(Map<String, String> sections, String... keywords) {
+        StringBuilder contentBuilder = new StringBuilder();
+
+        for (Map.Entry<String, String> entry : sections.entrySet()) {
+            if (!containsAnyKeyword(entry.getKey(), keywords)) {
+                continue;
+            }
+            if (!contentBuilder.isEmpty()) {
+                contentBuilder.append("\n");
+            }
+            contentBuilder.append("### ").append(entry.getKey()).append("\n");
+            contentBuilder.append(limitLines(entry.getValue(), SECTION_MAX_LINES));
+        }
+
+        return contentBuilder.toString().trim();
+    }
+
+    private boolean containsAnyKeyword(String text, String... keywords) {
+        if (text == null || keywords == null) {
+            return false;
+        }
+
+        for (String keyword : keywords) {
+            if (keyword != null && !keyword.isBlank() && text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String limitLines(String text, int maxLines) {
+        if (text == null || text.isBlank() || maxLines <= 0) {
+            return "- （该部分为空）";
+        }
+
+        StringBuilder result = new StringBuilder();
+        int lineCount = 0;
+        String[] lines = text.split("\n");
+        for (String line : lines) {
+            String trimmedLine = line.trim();
+            if (trimmedLine.isEmpty()) {
+                continue;
+            }
+            if (lineCount >= maxLines) {
+                result.append("...(已截断)\n");
+                break;
+            }
+            result.append(trimmedLine).append("\n");
+            lineCount++;
+        }
+
+        if (result.isEmpty()) {
+            return "- （该部分为空）";
+        }
+        return result.toString().trim();
+    }
+
+    private String truncate(String text, int maxChars) {
+        if (text == null || maxChars <= 0 || text.length() <= maxChars) {
+            return text;
+        }
+        int endIndex = Math.max(0, maxChars - 8);
+        return text.substring(0, endIndex) + "...(截断)";
     }
 }
