@@ -1,6 +1,7 @@
 package org.example.controller;
 
 import org.example.config.FileUploadConfig;
+import org.example.dto.common.ApiResponse;
 import org.example.dto.FileUploadRes;
 import org.example.service.VectorIndexService;
 import org.slf4j.Logger;
@@ -99,39 +100,6 @@ public class FileUploadController {
             errorResponse.setMessage("文件上传失败: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(errorResponse);
-        }
-    }
-
-    /**
-     * 统一 API 响应格式
-     */
-    public static class ApiResponse<T> {
-        private int code;
-        private String message;
-        private T data;
-
-        public int getCode() {
-            return code;
-        }
-
-        public void setCode(int code) {
-            this.code = code;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public void setMessage(String message) {
-            this.message = message;
-        }
-
-        public T getData() {
-            return data;
-        }
-
-        public void setData(T data) {
-            this.data = data;
         }
     }
 

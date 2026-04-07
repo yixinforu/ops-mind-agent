@@ -7,10 +7,9 @@ import io.milvus.param.RpcStatus;
 import io.milvus.param.collection.LoadCollectionParam;
 import io.milvus.param.dml.DeleteParam;
 import io.milvus.param.dml.InsertParam;
-import lombok.Getter;
-import lombok.Setter;
 import org.example.constant.MilvusConstants;
 import org.example.dto.DocumentChunk;
+import org.example.dto.vector.IndexingResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -308,44 +307,4 @@ public class VectorIndexService {
         }
     }
 
-    /**
-     * 索引结果类
-     */
-    @Getter
-    public static class IndexingResult {
-        @Setter
-        private boolean success;
-        @Setter
-        private String directoryPath;
-        @Setter
-        private int totalFiles;
-        private int successCount;
-        private int failCount;
-        @Setter
-        private LocalDateTime startTime;
-        @Setter
-        private LocalDateTime endTime;
-        @Setter
-        private String errorMessage;
-        private Map<String, String> failedFiles = new HashMap<>();
-
-        public void incrementSuccessCount() {
-            this.successCount++;
-        }
-
-        public void incrementFailCount() {
-            this.failCount++;
-        }
-
-        public long getDurationMs() {
-            if (startTime != null && endTime != null) {
-                return java.time.Duration.between(startTime, endTime).toMillis();
-            }
-            return 0;
-        }
-
-        public void addFailedFile(String filePath, String error) {
-            this.failedFiles.put(filePath, error);
-        }
-    }
 }

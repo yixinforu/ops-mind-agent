@@ -5,9 +5,8 @@ import io.milvus.grpc.SearchResults;
 import io.milvus.param.R;
 import io.milvus.param.dml.SearchParam;
 import io.milvus.response.SearchResultsWrapper;
-import lombok.Getter;
-import lombok.Setter;
 import org.example.constant.MilvusConstants;
+import org.example.dto.vector.SearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,18 +90,5 @@ public class VectorSearchService {
             logger.error("搜索相似文档失败", e);
             throw new RuntimeException("搜索失败: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * 搜索结果类
-     */
-    @Setter
-    @Getter
-    public static class SearchResult {
-        private String id;
-        private String content;
-        private float score;
-        private String metadata;
-
     }
 }

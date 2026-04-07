@@ -1,8 +1,10 @@
 package org.example.agent.tool;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
+import org.example.agent.tool.model.logdto.LogEntry;
+import org.example.agent.tool.model.logdto.LogTopicInfo;
+import org.example.agent.tool.model.logdto.LogTopicsOutput;
+import org.example.agent.tool.model.logdto.QueryLogsOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -600,97 +602,5 @@ public class QueryLogsTools {
         } catch (Exception e) {
             return String.format("{\"success\":false,\"message\":\"%s\"}", message);
         }
-    }
-    
-    // ==================== 数据模型 ====================
-    
-    /**
-     * 日志条目
-     */
-    @Data
-    public static class LogEntry {
-        @JsonProperty("timestamp")
-        private String timestamp;
-        
-        @JsonProperty("level")
-        private String level;
-        
-        @JsonProperty("service")
-        private String service;
-        
-        @JsonProperty("instance")
-        private String instance;
-        
-        @JsonProperty("message")
-        private String message;
-        
-        @JsonProperty("metrics")
-        private Map<String, String> metrics;
-    }
-    
-    /**
-     * 日志查询输出
-     */
-    @Data
-    public static class QueryLogsOutput {
-        @JsonProperty("success")
-        private boolean success;
-        
-        @JsonProperty("region")
-        private String region;
-        
-        @JsonProperty("log_topic")
-        private String logTopic;
-        
-        @JsonProperty("query")
-        private String query;
-        
-        @JsonProperty("logs")
-        private List<LogEntry> logs;
-        
-        @JsonProperty("total")
-        private int total;
-        
-        @JsonProperty("message")
-        private String message;
-    }
-    
-    /**
-     * 日志主题信息
-     */
-    @Data
-    public static class LogTopicInfo {
-        @JsonProperty("topic_name")
-        private String topicName;
-        
-        @JsonProperty("description")
-        private String description;
-        
-        @JsonProperty("example_queries")
-        private List<String> exampleQueries;
-        
-        @JsonProperty("related_alerts")
-        private List<String> relatedAlerts;
-    }
-    
-    /**
-     * 日志主题列表输出
-     */
-    @Data
-    public static class LogTopicsOutput {
-        @JsonProperty("success")
-        private boolean success;
-        
-        @JsonProperty("topics")
-        private List<LogTopicInfo> topics;
-        
-        @JsonProperty("available_regions")
-        private List<String> availableRegions;
-        
-        @JsonProperty("default_region")
-        private String defaultRegion;
-        
-        @JsonProperty("message")
-        private String message;
     }
 }

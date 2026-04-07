@@ -1,11 +1,13 @@
 package org.example.agent.tool;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.example.agent.tool.model.metrics.PrometheusAlert;
+import org.example.agent.tool.model.metrics.PrometheusAlertsOutput;
+import org.example.agent.tool.model.metrics.PrometheusAlertsResult;
+import org.example.agent.tool.model.metrics.SimplifiedAlert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -230,74 +232,5 @@ public class QueryMetricsTools {
         } catch (Exception e) {
             return String.format("{\"success\":false,\"message\":\"%s\",\"error\":\"%s\"}", message, error);
         }
-    }
-    
-    // ==================== 数据模型 ====================
-    
-    /**
-     * Prometheus 告警信息结构
-     */
-    @Data
-    public static class PrometheusAlert {
-        private Map<String, String> labels;
-        private Map<String, String> annotations;
-        private String state;
-        private String activeAt;
-        private String value;
-    }
-    
-    /**
-     * Prometheus 告警查询结果
-     */
-    @Data
-    public static class PrometheusAlertsResult {
-        private String status;
-        private AlertsData data;
-        private String error;
-        private String errorType;
-    }
-    
-    @Data
-    public static class AlertsData {
-        private List<PrometheusAlert> alerts = new ArrayList<>();
-    }
-    
-    /**
-     * 简化的告警信息
-     */
-    @Data
-    public static class SimplifiedAlert {
-        @JsonProperty("alert_name")
-        private String alertName;
-        
-        @JsonProperty("description")
-        private String description;
-        
-        @JsonProperty("state")
-        private String state;
-        
-        @JsonProperty("active_at")
-        private String activeAt;
-        
-        @JsonProperty("duration")
-        private String duration;
-    }
-    
-    /**
-     * 告警查询输出
-     */
-    @Data
-    public static class PrometheusAlertsOutput {
-        @JsonProperty("success")
-        private boolean success;
-        
-        @JsonProperty("alerts")
-        private List<SimplifiedAlert> alerts;
-        
-        @JsonProperty("message")
-        private String message;
-        
-        @JsonProperty("error")
-        private String error;
     }
 }

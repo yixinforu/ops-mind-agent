@@ -10,6 +10,7 @@ import com.alibaba.dashscope.exception.InputRequiredException;
 import com.alibaba.dashscope.exception.NoApiKeyException;
 import com.alibaba.dashscope.utils.Constants;
 import io.reactivex.Flowable;
+import org.example.dto.vector.SearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,7 +79,7 @@ public class RagService {
             logger.info("收到 RAG 流式查询: {}", question);
 
             // 1. 从向量数据库检索相关文档
-            List<VectorSearchService.SearchResult> searchResults = 
+            List<SearchResult> searchResults =
                 vectorSearchService.searchSimilarDocuments(question, topK);
 
             // 发送检索结果
@@ -106,11 +107,11 @@ public class RagService {
     /**
      * 构建上下文
      */
-    private String buildContext(List<VectorSearchService.SearchResult> searchResults) {
+    private String buildContext(List<SearchResult> searchResults) {
         StringBuilder context = new StringBuilder();
         
         for (int i = 0; i < searchResults.size(); i++) {
-            VectorSearchService.SearchResult result = searchResults.get(i);
+            SearchResult result = searchResults.get(i);
             context.append("【参考资料 ").append(i + 1).append("】\n");
             context.append(result.getContent()).append("\n\n");
         }
@@ -224,7 +225,7 @@ public class RagService {
      * 流式回调接口
      */
     public interface StreamCallback {
-        void onSearchResults(List<VectorSearchService.SearchResult> results);
+        void onSearchResults(List<SearchResult> results);
         void onReasoningChunk(String chunk);
         void onContentChunk(String chunk);
         void onComplete(String fullContent, String fullReasoning);

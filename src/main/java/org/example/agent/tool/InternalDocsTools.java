@@ -1,6 +1,7 @@
 package org.example.agent.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.example.dto.vector.SearchResult;
 import org.example.service.VectorSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,7 +58,7 @@ public class InternalDocsTools {
 
         try {
             // 使用向量搜索服务检索相关文档
-            List<VectorSearchService.SearchResult> searchResults = 
+            List<SearchResult> searchResults =
                     vectorSearchService.searchSimilarDocuments(query, topK);
             
             if (searchResults.isEmpty()) {
