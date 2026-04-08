@@ -3,10 +3,14 @@ class SuperBizAgentApp {
     constructor() {
         this.apiBaseUrl = 'http://localhost:9900/api';
         this.currentMode = 'quick'; // 'quick' 或 'stream'
+        this.authToken = localStorage.getItem('authToken') || '';
+        this.currentUser = null;
+        this.loginCaptchaId = '';
+        this.registerCaptchaId = '';
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
         this.currentChatHistory = []; // 当前对话的消息历史
-        this.chatHistories = this.loadChatHistories(); // 所有历史对话
+        this.chatHistories = []; // 所有历史对话
         this.isCurrentChatFromHistory = false; // 标记当前对话是否是从历史记录加载的
         this.historySyncTimer = null;
         
@@ -16,8 +20,7 @@ class SuperBizAgentApp {
         this.initMarkdown();
         this.checkAndSetCentered();
         this.renderChatHistory();
-        // 初始化后尝试从服务端同步历史记录，支持跨浏览器共享
-        this.syncChatHistoriesFromServer();
+        this.initializeAuthFlow();
     }
 
     // 初始化Markdown配置
@@ -119,6 +122,30 @@ class SuperBizAgentApp {
         this.chatContainer = document.querySelector('.chat-container');
         this.welcomeGreeting = document.getElementById('welcomeGreeting');
         this.chatHistoryList = document.getElementById('chatHistoryList');
+        this.sidebarUserInfo = document.getElementById('sidebarUserInfo');
+        this.sidebarUsername = document.getElementById('sidebarUsername');
+        this.sidebarUserAvatar = document.getElementById('sidebarUserAvatar');
+        this.logoutBtn = document.getElementById('logoutBtn');
+
+        // 认证层元素
+        this.authOverlay = document.getElementById('authOverlay');
+        this.authTabLogin = document.getElementById('authTabLogin');
+        this.authTabRegister = document.getElementById('authTabRegister');
+        this.authLoginPanel = document.getElementById('authLoginPanel');
+        this.authRegisterPanel = document.getElementById('authRegisterPanel');
+        this.loginUsernameInput = document.getElementById('loginUsername');
+        this.loginPasswordInput = document.getElementById('loginPassword');
+        this.loginCaptchaInput = document.getElementById('loginCaptchaInput');
+        this.loginCaptchaQuestion = document.getElementById('loginCaptchaQuestion');
+        this.refreshLoginCaptchaBtn = document.getElementById('refreshLoginCaptchaBtn');
+        this.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+        this.registerUsernameInput = document.getElementById('registerUsername');
+        this.registerPasswordInput = document.getElementById('registerPassword');
+        this.registerConfirmPasswordInput = document.getElementById('registerConfirmPassword');
+        this.registerCaptchaInput = document.getElementById('registerCaptchaInput');
+        this.registerCaptchaQuestion = document.getElementById('registerCaptchaQuestion');
+        this.refreshRegisterCaptchaBtn = document.getElementById('refreshRegisterCaptchaBtn');
+        this.registerSubmitBtn = document.getElementById('registerSubmitBtn');
         
         // 初始化时检查是否需要居中
         this.checkAndSetCentered();
@@ -156,7 +183,8 @@ class SuperBizAgentApp {
         
         // 点击外部关闭下拉菜单
         document.addEventListener('click', (e) => {
-            if (!this.modeSelectorBtn.contains(e.target) && 
+            if (this.modeSelectorBtn && this.modeDropdown &&
+                !this.modeSelectorBtn.contains(e.target) && 
                 !this.modeDropdown.contains(e.target)) {
                 this.closeModeDropdown();
             }
@@ -206,6 +234,391 @@ class SuperBizAgentApp {
         if (this.fileInput) {
             this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         }
+
+        // 认证相关事件
+        if (this.authTabLogin) {
+            this.authTabLogin.addEventListener('click', () => this.switchAuthTab('login'));
+        }
+        if (this.authTabRegister) {
+            this.authTabRegister.addEventListener('click', () => this.switchAuthTab('register'));
+        }
+        if (this.refreshLoginCaptchaBtn) {
+            this.refreshLoginCaptchaBtn.addEventListener('click', () => this.fetchCaptcha('login'));
+        }
+        if (this.refreshRegisterCaptchaBtn) {
+            this.refreshRegisterCaptchaBtn.addEventListener('click', () => this.fetchCaptcha('register'));
+        }
+        if (this.loginSubmitBtn) {
+            this.loginSubmitBtn.addEventListener('click', () => this.submitLogin());
+        }
+        if (this.registerSubmitBtn) {
+            this.registerSubmitBtn.addEventListener('click', () => this.submitRegister());
+        }
+        if (this.logoutBtn) {
+            this.logoutBtn.addEventListener('click', () => this.handleLogout());
+        }
+
+        [this.loginUsernameInput, this.loginPasswordInput, this.loginCaptchaInput].forEach((el) => {
+            if (!el) return;
+            el.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.submitLogin();
+                }
+            });
+        });
+        [this.registerUsernameInput, this.registerPasswordInput, this.registerConfirmPasswordInput, this.registerCaptchaInput].forEach((el) => {
+            if (!el) return;
+            el.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.submitRegister();
+                }
+            });
+        });
+    }
+
+    async initializeAuthFlow() {
+        try {
+            await this.fetchCaptcha('login');
+            await this.fetchCaptcha('register');
+        } catch (e) {
+            console.warn('初始化验证码失败:', e);
+        }
+
+        if (!this.authToken) {
+            this.showAuthOverlay(true);
+            this.updateSidebarUserInfo();
+            return;
+        }
+
+        try {
+            const response = await this.authFetch(`${this.apiBaseUrl}/auth/me`, { method: 'GET' }, true);
+            if (!response.ok) {
+                this.handleAuthExpired(false);
+                return;
+            }
+            const data = await response.json();
+            if (!data || (data.code !== 200 && data.message !== 'success') || !data.data) {
+                this.handleAuthExpired(false);
+                return;
+            }
+
+            this.currentUser = {
+                userId: data.data.userId,
+                username: data.data.username
+            };
+            this.showAuthOverlay(false);
+            this.updateSidebarUserInfo();
+            this.chatHistories = this.loadChatHistories();
+            this.renderChatHistory();
+            this.syncChatHistoriesFromServer();
+        } catch (e) {
+            console.warn('初始化登录态失败:', e);
+            this.handleAuthExpired(false);
+        }
+    }
+
+    showAuthOverlay(show) {
+        if (!this.authOverlay) {
+            return;
+        }
+        if (show) {
+            this.authOverlay.classList.add('show');
+        } else {
+            this.authOverlay.classList.remove('show');
+        }
+    }
+
+    switchAuthTab(tab) {
+        const isLogin = tab === 'login';
+        if (this.authTabLogin) {
+            this.authTabLogin.classList.toggle('active', isLogin);
+        }
+        if (this.authTabRegister) {
+            this.authTabRegister.classList.toggle('active', !isLogin);
+        }
+        if (this.authLoginPanel) {
+            this.authLoginPanel.classList.toggle('active', isLogin);
+        }
+        if (this.authRegisterPanel) {
+            this.authRegisterPanel.classList.toggle('active', !isLogin);
+        }
+    }
+
+    async fetchCaptcha(mode) {
+        const response = await fetch(`${this.apiBaseUrl}/auth/captcha`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('验证码获取失败');
+        }
+
+        const data = await response.json();
+        if (!data || (data.code !== 200 && data.message !== 'success') || !data.data) {
+            throw new Error(data?.message || '验证码获取失败');
+        }
+
+        if (mode === 'login') {
+            this.loginCaptchaId = data.data.captchaId;
+            if (this.loginCaptchaQuestion) {
+                this.loginCaptchaQuestion.textContent = data.data.question || '--';
+            }
+        } else {
+            this.registerCaptchaId = data.data.captchaId;
+            if (this.registerCaptchaQuestion) {
+                this.registerCaptchaQuestion.textContent = data.data.question || '--';
+            }
+        }
+    }
+
+    async submitLogin() {
+        const username = this.loginUsernameInput ? this.loginUsernameInput.value.trim() : '';
+        const password = this.loginPasswordInput ? this.loginPasswordInput.value : '';
+        const captchaAnswer = this.loginCaptchaInput ? this.loginCaptchaInput.value.trim() : '';
+
+        if (!username || !password || !captchaAnswer) {
+            this.showNotification('请完整填写登录信息', 'warning');
+            return;
+        }
+        if (!/^[A-Za-z0-9]{1,10}$/.test(username)) {
+            this.showNotification('用户名只能包含英文和数字，且长度不能超过10位', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    captchaId: this.loginCaptchaId,
+                    captchaAnswer: captchaAnswer
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data || (data.code !== 200 && data.message !== 'success') || !data.data) {
+                this.showNotification(data?.message || '登录失败', 'error');
+                await this.fetchCaptcha('login').catch(() => {});
+                if (this.loginCaptchaInput) {
+                    this.loginCaptchaInput.value = '';
+                }
+                return;
+            }
+            this.finishLogin(data.data, true);
+        } catch (e) {
+            this.showNotification('登录失败: ' + e.message, 'error');
+            await this.fetchCaptcha('login').catch(() => {});
+        }
+    }
+
+    async submitRegister() {
+        const username = this.registerUsernameInput ? this.registerUsernameInput.value.trim() : '';
+        const password = this.registerPasswordInput ? this.registerPasswordInput.value : '';
+        const confirmPassword = this.registerConfirmPasswordInput ? this.registerConfirmPasswordInput.value : '';
+        const captchaAnswer = this.registerCaptchaInput ? this.registerCaptchaInput.value.trim() : '';
+
+        if (!username || !password || !confirmPassword || !captchaAnswer) {
+            this.showNotification('请完整填写注册信息', 'warning');
+            return;
+        }
+        if (!/^[A-Za-z0-9]{1,10}$/.test(username)) {
+            this.showNotification('用户名只能包含英文和数字，且长度不能超过10位', 'warning');
+            return;
+        }
+        if (password.length < 5) {
+            this.showNotification('密码长度不能低于5位', 'warning');
+            return;
+        }
+        if (password !== confirmPassword) {
+            this.showNotification('两次输入的密码不一致', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    confirmPassword: confirmPassword,
+                    captchaId: this.registerCaptchaId,
+                    captchaAnswer: captchaAnswer
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data || (data.code !== 200 && data.message !== 'success') || !data.data) {
+                this.showNotification(data?.message || '注册失败', 'error');
+                await this.fetchCaptcha('register').catch(() => {});
+                if (this.registerCaptchaInput) {
+                    this.registerCaptchaInput.value = '';
+                }
+                return;
+            }
+            this.finishLogin(data.data, true);
+        } catch (e) {
+            this.showNotification('注册失败: ' + e.message, 'error');
+            await this.fetchCaptcha('register').catch(() => {});
+        }
+    }
+
+    finishLogin(authData, showSuccessNotification) {
+        this.authToken = authData.token || '';
+        if (!this.authToken) {
+            this.showNotification('登录态异常，请重试', 'error');
+            return;
+        }
+
+        localStorage.setItem('authToken', this.authToken);
+        this.currentUser = {
+            userId: authData.userId,
+            username: authData.username
+        };
+
+        if (this.loginPasswordInput) this.loginPasswordInput.value = '';
+        if (this.loginCaptchaInput) this.loginCaptchaInput.value = '';
+        if (this.registerPasswordInput) this.registerPasswordInput.value = '';
+        if (this.registerConfirmPasswordInput) this.registerConfirmPasswordInput.value = '';
+        if (this.registerCaptchaInput) this.registerCaptchaInput.value = '';
+
+        // 登录后重置会话状态，加载当前用户隔离数据
+        this.currentChatHistory = [];
+        this.chatHistories = this.loadChatHistories();
+        this.sessionId = this.generateSessionId();
+        this.isCurrentChatFromHistory = false;
+        if (this.chatMessages) {
+            this.chatMessages.innerHTML = '';
+        }
+        this.checkAndSetCentered();
+        this.renderChatHistory();
+        this.updateSidebarUserInfo();
+        this.showAuthOverlay(false);
+        this.syncChatHistoriesFromServer();
+
+        if (showSuccessNotification) {
+            this.showNotification('登录成功', 'success');
+        }
+    }
+
+    async handleLogout() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
+
+        const confirmed = await this.showConfirmDialog({
+            title: '退出登录',
+            message: '确认退出当前账号吗？',
+            confirmText: '退出',
+            cancelText: '取消'
+        });
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            await this.authFetch(`${this.apiBaseUrl}/auth/logout`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }, true);
+        } catch (e) {
+            console.warn('退出登录请求失败:', e);
+        }
+
+        this.handleAuthExpired(false);
+        this.showNotification('已退出登录', 'info');
+    }
+
+    handleAuthExpired(showToast = true) {
+        this.authToken = '';
+        this.currentUser = null;
+        localStorage.removeItem('authToken');
+
+        this.chatHistories = [];
+        this.currentChatHistory = [];
+        this.isCurrentChatFromHistory = false;
+        this.sessionId = this.generateSessionId();
+
+        if (this.chatMessages) {
+            this.chatMessages.innerHTML = '';
+        }
+        this.renderChatHistory();
+        this.checkAndSetCentered();
+        this.updateSidebarUserInfo();
+        this.showAuthOverlay(true);
+        this.switchAuthTab('login');
+        this.fetchCaptcha('login').catch(() => {});
+        this.fetchCaptcha('register').catch(() => {});
+
+        if (showToast) {
+            this.showNotification('登录已失效，请重新登录', 'warning');
+        }
+    }
+
+    isAuthenticated() {
+        return !!(this.authToken && this.currentUser && this.currentUser.userId);
+    }
+
+    updateSidebarUserInfo() {
+        if (!this.sidebarUserInfo) {
+            return;
+        }
+
+        if (!this.currentUser || !this.currentUser.username) {
+            this.sidebarUserInfo.classList.remove('show');
+            if (this.sidebarUsername) {
+                this.sidebarUsername.textContent = '-';
+            }
+            if (this.sidebarUserAvatar) {
+                this.sidebarUserAvatar.textContent = 'U';
+            }
+            return;
+        }
+
+        this.sidebarUserInfo.classList.add('show');
+        if (this.sidebarUsername) {
+            this.sidebarUsername.textContent = this.currentUser.username;
+        }
+        if (this.sidebarUserAvatar) {
+            this.sidebarUserAvatar.textContent = this.currentUser.username.substring(0, 1).toUpperCase();
+        }
+    }
+
+    getChatHistoryStorageKey() {
+        if (!this.currentUser || !this.currentUser.userId) {
+            return 'chatHistories';
+        }
+        return `chatHistories:${this.currentUser.userId}`;
+    }
+
+    async authFetch(url, options = {}, skipAuthExpiredHandling = false) {
+        const requestOptions = {
+            ...options,
+            headers: {
+                ...(options.headers || {})
+            }
+        };
+
+        if (this.authToken) {
+            requestOptions.headers['Authorization'] = `Bearer ${this.authToken}`;
+        }
+
+        const response = await fetch(url, requestOptions);
+        if (response.status === 401 && !skipAuthExpiredHandling) {
+            this.handleAuthExpired(true);
+        }
+        return response;
     }
 
     // 切换工具菜单显示/隐藏
@@ -230,6 +643,12 @@ class SuperBizAgentApp {
 
     // 新建对话
     newChat() {
+        if (!this.isAuthenticated()) {
+            this.showAuthOverlay(true);
+            this.showNotification('请先登录后再开始对话', 'warning');
+            return;
+        }
+
         if (this.isStreaming) {
             this.showNotification('请等待当前对话完成后再新建对话', 'warning');
             return;
@@ -287,6 +706,9 @@ class SuperBizAgentApp {
     
     // 保存当前对话到历史记录（新建）
     saveCurrentChat() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         if (this.currentChatHistory.length === 0) {
             return;
         }
@@ -326,6 +748,9 @@ class SuperBizAgentApp {
     
     // 更新当前对话的历史记录
     updateCurrentChatHistory() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         if (this.currentChatHistory.length === 0) {
             return;
         }
@@ -356,6 +781,9 @@ class SuperBizAgentApp {
 
     // 统一持久化当前会话到 localStorage，并刷新左侧近期对话列表
     persistCurrentChatHistory() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         if (this.currentChatHistory.length === 0) {
             return;
         }
@@ -370,8 +798,11 @@ class SuperBizAgentApp {
     
     // 加载历史对话列表
     loadChatHistories() {
+        if (!this.isAuthenticated()) {
+            return [];
+        }
         try {
-            const stored = localStorage.getItem('chatHistories');
+            const stored = localStorage.getItem(this.getChatHistoryStorageKey());
             const parsed = stored ? JSON.parse(stored) : [];
             return this.normalizeChatHistoryIndexList(parsed);
         } catch (e) {
@@ -382,9 +813,12 @@ class SuperBizAgentApp {
     
     // 保存历史对话列表到localStorage
     saveChatHistories(syncServer = true) {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         try {
             this.chatHistories = this.normalizeChatHistoryIndexList(this.chatHistories);
-            localStorage.setItem('chatHistories', JSON.stringify(this.chatHistories));
+            localStorage.setItem(this.getChatHistoryStorageKey(), JSON.stringify(this.chatHistories));
             if (syncServer) {
                 this.scheduleSyncChatHistoriesToServer();
             }
@@ -395,6 +829,9 @@ class SuperBizAgentApp {
 
     // 延迟同步，避免高频写入本地时反复触发后端请求
     scheduleSyncChatHistoriesToServer() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         if (this.historySyncTimer) {
             clearTimeout(this.historySyncTimer);
         }
@@ -405,9 +842,12 @@ class SuperBizAgentApp {
 
     // 将近期对话列表同步到后端（跨浏览器共享）
     async syncChatHistoriesToServer() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         try {
             const lightweightHistories = this.normalizeChatHistoryIndexList(this.chatHistories);
-            await fetch(`${this.apiBaseUrl}/chat/histories`, {
+            await this.authFetch(`${this.apiBaseUrl}/chat/histories`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -421,8 +861,11 @@ class SuperBizAgentApp {
 
     // 从后端拉取历史记录并与本地合并，解决跨浏览器历史不共享问题
     async syncChatHistoriesFromServer() {
+        if (!this.isAuthenticated()) {
+            return;
+        }
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat/histories`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat/histories`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -621,12 +1064,12 @@ class SuperBizAgentApp {
 
     // 删除后端会话存储（chat:session:*）
     async clearSessionOnServer(sessionId) {
-        if (!sessionId) {
+        if (!this.isAuthenticated() || !sessionId) {
             return true;
         }
 
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat/clear`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat/clear`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -659,6 +1102,11 @@ class SuperBizAgentApp {
 
     // 加载历史对话
     async loadChatHistory(historyId) {
+        if (!this.isAuthenticated()) {
+            this.showAuthOverlay(true);
+            return;
+        }
+
         const history = this.chatHistories.find(h => h.id === historyId);
         if (!history) {
             return;
@@ -673,7 +1121,7 @@ class SuperBizAgentApp {
 
         let serverMessage = '';
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat/session/messages/${encodeURIComponent(history.id)}`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat/session/messages/${encodeURIComponent(history.id)}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json'
@@ -732,6 +1180,11 @@ class SuperBizAgentApp {
     
     // 删除历史对话
     async deleteChatHistory(historyId) {
+        if (!this.isAuthenticated()) {
+            this.showAuthOverlay(true);
+            return;
+        }
+
         const confirmed = await this.showConfirmDialog({
             title: '删除会话',
             message: '确认删除该会话吗？删除后无法恢复。',
@@ -840,6 +1293,12 @@ class SuperBizAgentApp {
 
     // 发送消息
     async sendMessage() {
+        if (!this.isAuthenticated()) {
+            this.showAuthOverlay(true);
+            this.showNotification('请先登录后再发送消息', 'warning');
+            return;
+        }
+
         let message = '';
         if (this.messageInput) {
             message = this.messageInput.value.trim();
@@ -892,7 +1351,7 @@ class SuperBizAgentApp {
         const loadingMessage = this.addLoadingMessage('正在思考...');
         
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -948,7 +1407,7 @@ class SuperBizAgentApp {
     // 发送流式消息
     async sendStreamMessage(message) {
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat_stream`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat_stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1339,7 +1798,7 @@ class SuperBizAgentApp {
             border-radius: 8px;
             color: white;
             font-weight: 500;
-            z-index: 10000;
+            z-index: 13010;
             animation: slideIn 0.3s ease;
             max-width: 300px;
         `;
@@ -1390,6 +1849,12 @@ class SuperBizAgentApp {
 
     // 上传文件到知识库
     async uploadFile(file) {
+        if (!this.isAuthenticated()) {
+            this.showAuthOverlay(true);
+            this.showNotification('请先登录后再上传文件', 'warning');
+            return;
+        }
+
         // 再次验证文件类型（双重保险）
         if (!this.validateFileType(file)) {
             this.showNotification('只支持上传 TXT 或 Markdown (.md) 格式的文件', 'error');
@@ -1414,7 +1879,7 @@ class SuperBizAgentApp {
             formData.append('file', file);
 
             // 发送上传请求
-            const response = await fetch(`${this.apiBaseUrl}/upload`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -1459,7 +1924,7 @@ class SuperBizAgentApp {
     // 发送智能运维请求（SSE 流式模式）
     async sendAIOpsRequest(loadingMessageElement) {
         try {
-            const response = await fetch(`${this.apiBaseUrl}/ai_ops`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/ai_ops`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1853,6 +2318,12 @@ class SuperBizAgentApp {
 
     // 触发智能运维（点击智能运维按钮时直接调用）
     async triggerAIOps() {
+        if (!this.isAuthenticated()) {
+            this.showAuthOverlay(true);
+            this.showNotification('请先登录后再使用 AI Ops', 'warning');
+            return;
+        }
+
         if (this.isStreaming) {
             this.showNotification('请等待当前操作完成', 'warning');
             return;

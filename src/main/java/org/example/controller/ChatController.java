@@ -7,6 +7,8 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
+import org.example.auth.AuthContext;
+import org.example.auth.AuthUser;
 import org.example.dto.chat.ChatRequest;
 import org.example.dto.chat.ChatResponse;
 import org.example.dto.chat.ClearRequest;
@@ -70,6 +72,7 @@ public class ChatController {
     public ResponseEntity<ApiResponse<ChatResponse>> chat(@RequestBody ChatRequest request) {
         try {
             logger.info("收到对话请求 - SessionId: {}, Question: {}", request.getId(), request.getQuestion());
+            Long userId = getCurrentUserId();
 
             // Step 1: 参数校验，避免空问题触发模型调用
             if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
@@ -78,7 +81,7 @@ public class ChatController {
             }
 
             // Step 2: 读取会话历史，提供多轮上下文
-            ChatSession session = chatSessionService.getOrCreateSession(request.getId());
+            ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
             List<Map<String, String>> history = chatSessionService.getHistory(session);
             logger.info("会话历史消息对数: {}", history.size() / 2);
 
@@ -94,7 +97,7 @@ public class ChatController {
             // 执行对话
             String fullAnswer = chatService.executeChat(agent, request.getQuestion());
             // Step 4: 回写会话历史并返回结果
-            chatSessionService.addMessage(session, request.getQuestion(), fullAnswer);
+            chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
             logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}",
                     session.getSessionId(), session.getMessagePairCount());
             return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fullAnswer)));
@@ -112,12 +115,13 @@ public class ChatController {
     public ResponseEntity<ApiResponse<String>> clearChatHistory(@RequestBody ClearRequest request) {
         try {
             logger.info("收到清空会话历史请求 - SessionId: {}", request.getId());
+            Long userId = getCurrentUserId();
 
             if (request.getId() == null || request.getId().isEmpty()) {
                 return ResponseEntity.ok(ApiResponse.error("会话ID不能为空"));
             }
 
-            if (chatSessionService.clearHistory(request.getId())) {
+            if (chatSessionService.clearHistory(userId, request.getId())) {
                 return ResponseEntity.ok(ApiResponse.success("会话历史已清空"));
             } else {
                 return ResponseEntity.ok(ApiResponse.error("会话不存在"));
@@ -135,7 +139,8 @@ public class ChatController {
     @PostMapping("/chat/histories")
     public ResponseEntity<ApiResponse<String>> saveChatHistories(@RequestBody List<Map<String, Object>> histories) {
         try {
-            chatSessionService.saveUiChatHistories(histories);
+            Long userId = getCurrentUserId();
+            chatSessionService.saveUiChatHistories(userId, histories);
             return ResponseEntity.ok(ApiResponse.success("历史对话已保存"));
         } catch (Exception e) {
             logger.error("保存历史对话列表失败", e);
@@ -149,7 +154,8 @@ public class ChatController {
     @GetMapping("/chat/histories")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getChatHistories() {
         try {
-            List<Map<String, Object>> histories = chatSessionService.loadUiChatHistories();
+            Long userId = getCurrentUserId();
+            List<Map<String, Object>> histories = chatSessionService.loadUiChatHistories(userId);
             return ResponseEntity.ok(ApiResponse.success(histories));
         } catch (Exception e) {
             logger.error("获取历史对话列表失败", e);
@@ -163,7 +169,8 @@ public class ChatController {
     @GetMapping("/chat/session/messages/{sessionId}")
     public ResponseEntity<ApiResponse<List<Map<String, String>>>> getSessionMessages(@PathVariable String sessionId) {
         try {
-            Optional<List<Map<String, String>>> messagesOptional = chatSessionService.getSessionMessages(sessionId);
+            Long userId = getCurrentUserId();
+            Optional<List<Map<String, String>>> messagesOptional = chatSessionService.getSessionMessages(userId, sessionId);
             if (messagesOptional.isPresent()) {
                 return ResponseEntity.ok(ApiResponse.success(messagesOptional.get()));
             }
@@ -181,6 +188,7 @@ public class ChatController {
     @PostMapping(value = "/chat_stream", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(300000L);
+        Long userId = getCurrentUserId();
 
         // Step 1: 请求前置校验
         if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
@@ -199,7 +207,7 @@ public class ChatController {
                 logger.info("收到 ReactAgent 对话请求 - SessionId: {}, Question: {}", request.getId(), request.getQuestion());
 
                 // Step 2: 构建上下文与 Agent
-                ChatSession session = chatSessionService.getOrCreateSession(request.getId());
+                ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
                 List<Map<String, String>> history = chatSessionService.getHistory(session);
                 logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
                 // 创建 DashScope API 和 ChatModel
@@ -267,7 +275,7 @@ public class ChatController {
                                         session.getSessionId(), fullAnswer.length());
 
                                 // Step 4: 流结束后统一回写会话
-                                chatSessionService.addMessage(session, request.getQuestion(), fullAnswer);
+                                chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
                                 logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}",
                                         session.getSessionId(), session.getMessagePairCount());
 
@@ -307,10 +315,11 @@ public class ChatController {
         // 10分钟超时（告警分析可能较慢）
         SseEmitter emitter = new SseEmitter(600000L);
         String requestSessionId = request != null ? request.getId() : null;
+        Long userId = getCurrentUserId();
 
         executor.execute(() -> {
             try {
-                ChatSession session = chatSessionService.getOrCreateSession(requestSessionId);
+                ChatSession session = chatSessionService.getOrCreateSession(userId, requestSessionId);
                 logger.info("收到 AI 智能运维请求 - SessionId: {}, 启动多 Agent 协作流程", session.getSessionId());
 
                 // Step 1: 初始化 AIOps 专用模型参数
@@ -378,10 +387,9 @@ public class ChatController {
                                 String fullReport = fullReportBuilder.toString();
                                 logger.info("AIOps 流式分析完成，报告长度: {}", fullReport.length());
 
-                                // Step 2: 回写 AI Ops 摘要到会话历史，供后续 chat/chat_stream 追问复用
-                                String aiOpsSummary = aiOpsService.buildAiOpsConversationSummary(fullReport);
-                                chatSessionService.addAiOpsSummary(session, aiOpsSummary);
-                                logger.info("AI Ops 摘要已写入会话上下文 - SessionId: {}", session.getSessionId());
+                                // Step 2: 回写 AI Ops 完整报告到会话历史，供后续 chat/chat_stream 追问复用
+                                chatSessionService.addAiOpsReport(userId, session, fullReport);
+                                logger.info("AI Ops 完整报告已写入会话上下文 - SessionId: {}", session.getSessionId());
 
                                 if (fullReport.isEmpty()) {
                                     emitter.send(SseEmitter.event().name("message")
@@ -419,8 +427,9 @@ public class ChatController {
     public ResponseEntity<ApiResponse<SessionInfoResponse>> getSessionInfo(@PathVariable String sessionId) {
         try {
             logger.info("收到获取会话信息请求 - SessionId: {}", sessionId);
+            Long userId = getCurrentUserId();
 
-            Optional<SessionInfoResponse> responseOptional = chatSessionService.getSessionInfo(sessionId);
+            Optional<SessionInfoResponse> responseOptional = chatSessionService.getSessionInfo(userId, sessionId);
             if (responseOptional.isPresent()) {
                 return ResponseEntity.ok(ApiResponse.success(responseOptional.get()));
             } else {
@@ -431,5 +440,13 @@ public class ChatController {
             logger.error("获取会话信息失败", e);
             return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
         }
+    }
+
+    private Long getCurrentUserId() {
+        AuthUser authUser = AuthContext.getCurrentUser();
+        if (authUser == null || authUser.getUserId() == null) {
+            throw new IllegalStateException("未登录或登录已失效");
+        }
+        return authUser.getUserId();
     }
 }

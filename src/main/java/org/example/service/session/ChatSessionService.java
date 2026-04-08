@@ -28,7 +28,7 @@ public class ChatSessionService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatSessionService.class);
     private static final String SESSION_KEY_PREFIX = "chat:session:";
-    private static final String UI_HISTORY_KEY = "chat:ui:histories";
+    private static final String UI_HISTORY_KEY_PREFIX = "chat:ui:histories:";
 
     @Autowired(required = false)
     private StringRedisTemplate redisTemplate;
@@ -43,37 +43,38 @@ public class ChatSessionService {
     private long sessionTtlMinutes;
 
     private final Map<String, ChatSession> fallbackSessions = new ConcurrentHashMap<>();
-    private volatile List<Map<String, Object>> fallbackUiHistories = new ArrayList<>();
+    private final Map<Long, List<Map<String, Object>>> fallbackUiHistories = new ConcurrentHashMap<>();
 
-    public ChatSession getOrCreateSession(String sessionId) {
+    public ChatSession getOrCreateSession(Long userId, String sessionId) {
+        Long safeUserId = normalizeUserId(userId);
         String effectiveSessionId = (sessionId == null || sessionId.isEmpty())
                 ? UUID.randomUUID().toString()
                 : sessionId;
 
-        ChatSession fallbackSession = fallbackSessions.get(effectiveSessionId);
+        String fallbackScopedKey = buildFallbackSessionKey(safeUserId, effectiveSessionId);
+        ChatSession fallbackSession = fallbackSessions.get(fallbackScopedKey);
         if (fallbackSession != null) {
-            // 优先复用降级期间的内存会话，避免 Redis 恢复后上下文断裂。
-            persistSession(fallbackSession, "恢复会话到 Redis");
+            persistSession(safeUserId, fallbackSession, "恢复会话到 Redis");
             return fallbackSession;
         }
 
         if (redisTemplate != null) {
             try {
-                Optional<ChatSession> redisSessionOptional = loadSessionFromRedis(effectiveSessionId);
+                Optional<ChatSession> redisSessionOptional = loadSessionFromRedis(safeUserId, effectiveSessionId);
                 if (redisSessionOptional.isPresent()) {
                     return redisSessionOptional.get();
                 }
 
                 ChatSession newSession = new ChatSession(effectiveSessionId);
-                saveSessionToRedis(newSession);
+                saveSessionToRedis(safeUserId, newSession);
                 return newSession;
             } catch (Exception e) {
-                logger.warn("Redis 会话读取/创建失败，降级内存模式 - SessionId: {}, error: {}",
-                        effectiveSessionId, e.getMessage());
+                logger.warn("Redis 会话读取/创建失败，降级内存模式 - userId: {}, sessionId: {}, error: {}",
+                        safeUserId, effectiveSessionId, e.getMessage());
             }
         }
 
-        return fallbackSessions.computeIfAbsent(effectiveSessionId, ChatSession::new);
+        return fallbackSessions.computeIfAbsent(fallbackScopedKey, key -> new ChatSession(effectiveSessionId));
     }
 
     public List<Map<String, String>> getHistory(ChatSession session) {
@@ -83,50 +84,63 @@ public class ChatSessionService {
     /**
      * 获取会话完整消息历史（用于前端展示）
      */
-    public Optional<List<Map<String, String>>> getSessionMessages(String sessionId) {
+    public Optional<List<Map<String, String>>> getSessionMessages(Long userId, String sessionId) {
+        Long safeUserId = normalizeUserId(userId);
         if (sessionId == null || sessionId.isEmpty()) {
             return Optional.empty();
         }
 
         if (redisTemplate != null) {
             try {
-                Optional<ChatSession> redisSessionOptional = loadSessionFromRedis(sessionId);
+                Optional<ChatSession> redisSessionOptional = loadSessionFromRedis(safeUserId, sessionId);
                 if (redisSessionOptional.isPresent()) {
                     return Optional.of(redisSessionOptional.get().getHistory());
                 }
             } catch (Exception e) {
-                logger.warn("Redis 查询会话消息失败，降级内存模式 - SessionId: {}, error: {}", sessionId, e.getMessage());
+                logger.warn("Redis 查询会话消息失败，降级内存模式 - userId: {}, sessionId: {}, error: {}",
+                        safeUserId, sessionId, e.getMessage());
             }
         }
 
-        ChatSession fallbackSession = fallbackSessions.get(sessionId);
+        ChatSession fallbackSession = fallbackSessions.get(buildFallbackSessionKey(safeUserId, sessionId));
         if (fallbackSession == null) {
             return Optional.empty();
         }
         return Optional.of(fallbackSession.getHistory());
     }
 
-    public void addMessage(ChatSession session, String userQuestion, String aiAnswer) {
+    public void addMessage(Long userId, ChatSession session, String userQuestion, String aiAnswer) {
+        Long safeUserId = normalizeUserId(userId);
         session.addMessage(userQuestion, aiAnswer, maxWindowSize);
-        persistSession(session, "更新对话消息");
+        persistSession(safeUserId, session, "更新对话消息");
         logger.debug("会话 {} 更新历史消息，当前消息对数: {}",
                 session.getSessionId(), session.getMessagePairCount());
     }
 
     /**
      * 将 AI Ops 自动分析结果写入会话历史，便于后续 chat/chat_stream 继续追问时继承上下文。
-     *
-     * @param session 会话对象
-     * @param summary AI Ops 摘要文本
      */
-    public void addAiOpsSummary(ChatSession session, String summary) {
+    public void addAiOpsSummary(Long userId, ChatSession session, String summary) {
+        Long safeUserId = normalizeUserId(userId);
         session.addMessage("[系统任务] 执行 AI Ops 自动告警分析", summary, maxWindowSize);
-        persistSession(session, "写入 AI Ops 摘要");
+        persistSession(safeUserId, session, "写入 AI Ops 摘要");
         logger.info("会话 {} 已写入 AI Ops 摘要上下文，当前消息对数: {}",
                 session.getSessionId(), session.getMessagePairCount());
     }
 
-    public boolean clearHistory(String sessionId) {
+    /**
+     * 将 AI Ops 完整报告写入会话历史，确保重新打开会话时能看到完整内容。
+     */
+    public void addAiOpsReport(Long userId, ChatSession session, String fullReport) {
+        Long safeUserId = normalizeUserId(userId);
+        session.addMessage("[系统任务] 执行 AI Ops 自动告警分析", fullReport, maxWindowSize);
+        persistSession(safeUserId, session, "写入 AI Ops 完整报告");
+        logger.info("会话 {} 已写入 AI Ops 完整报告，当前消息对数: {}",
+                session.getSessionId(), session.getMessagePairCount());
+    }
+
+    public boolean clearHistory(Long userId, String sessionId) {
+        Long safeUserId = normalizeUserId(userId);
         if (sessionId == null || sessionId.isEmpty()) {
             return false;
         }
@@ -135,45 +149,48 @@ public class ChatSessionService {
 
         if (redisTemplate != null) {
             try {
-                Boolean deleted = redisTemplate.delete(buildSessionKey(sessionId));
+                Boolean deleted = redisTemplate.delete(buildSessionKey(safeUserId, sessionId));
                 if (Boolean.TRUE.equals(deleted)) {
                     cleared = true;
                 }
             } catch (Exception e) {
-                logger.warn("Redis 清空会话失败，尝试内存兜底 - SessionId: {}, error: {}", sessionId, e.getMessage());
+                logger.warn("Redis 清空会话失败，尝试内存兜底 - userId: {}, sessionId: {}, error: {}",
+                        safeUserId, sessionId, e.getMessage());
             }
         }
 
-        ChatSession fallbackSession = fallbackSessions.remove(sessionId);
+        ChatSession fallbackSession = fallbackSessions.remove(buildFallbackSessionKey(safeUserId, sessionId));
         if (fallbackSession != null) {
             fallbackSession.clearHistory();
             cleared = true;
         }
 
         if (cleared) {
-            removeUiHistory(sessionId);
-            logger.info("会话 {} 历史消息已清空", sessionId);
+            removeUiHistory(safeUserId, sessionId);
+            logger.info("会话历史已清空 - userId: {}, sessionId: {}", safeUserId, sessionId);
         }
         return cleared;
     }
 
-    public Optional<SessionInfoResponse> getSessionInfo(String sessionId) {
+    public Optional<SessionInfoResponse> getSessionInfo(Long userId, String sessionId) {
+        Long safeUserId = normalizeUserId(userId);
         if (sessionId == null || sessionId.isEmpty()) {
             return Optional.empty();
         }
 
         if (redisTemplate != null) {
             try {
-                Optional<ChatSession> redisSessionOptional = loadSessionFromRedis(sessionId);
+                Optional<ChatSession> redisSessionOptional = loadSessionFromRedis(safeUserId, sessionId);
                 if (redisSessionOptional.isPresent()) {
                     return Optional.of(buildSessionInfoResponse(redisSessionOptional.get()));
                 }
             } catch (Exception e) {
-                logger.warn("Redis 查询会话信息失败，降级内存模式 - SessionId: {}, error: {}", sessionId, e.getMessage());
+                logger.warn("Redis 查询会话信息失败，降级内存模式 - userId: {}, sessionId: {}, error: {}",
+                        safeUserId, sessionId, e.getMessage());
             }
         }
 
-        ChatSession fallbackSession = fallbackSessions.get(sessionId);
+        ChatSession fallbackSession = fallbackSessions.get(buildFallbackSessionKey(safeUserId, sessionId));
         if (fallbackSession == null) {
             return Optional.empty();
         }
@@ -183,33 +200,35 @@ public class ChatSessionService {
     /**
      * 保存前端“近期对话”列表到 Redis，支持跨浏览器读取。
      */
-    public void saveUiChatHistories(List<Map<String, Object>> histories) {
+    public void saveUiChatHistories(Long userId, List<Map<String, Object>> histories) {
+        Long safeUserId = normalizeUserId(userId);
         List<Map<String, Object>> normalized = normalizeUiHistories(histories);
         if (redisTemplate != null) {
             try {
                 String payload = objectMapper.writeValueAsString(normalized);
                 redisTemplate.opsForValue().set(
-                        UI_HISTORY_KEY,
+                        buildUiHistoryKey(safeUserId),
                         payload,
                         Math.max(1L, sessionTtlMinutes),
                         TimeUnit.MINUTES
                 );
-                fallbackUiHistories = normalized;
+                fallbackUiHistories.put(safeUserId, normalized);
                 return;
             } catch (Exception e) {
-                logger.warn("Redis 保存 UI 历史失败，降级内存模式 - error: {}", e.getMessage());
+                logger.warn("Redis 保存 UI 历史失败，降级内存模式 - userId: {}, error: {}", safeUserId, e.getMessage());
             }
         }
-        fallbackUiHistories = normalized;
+        fallbackUiHistories.put(safeUserId, normalized);
     }
 
     /**
      * 读取前端“近期对话”列表，优先 Redis，异常时降级到内存。
      */
-    public List<Map<String, Object>> loadUiChatHistories() {
+    public List<Map<String, Object>> loadUiChatHistories(Long userId) {
+        Long safeUserId = normalizeUserId(userId);
         if (redisTemplate != null) {
             try {
-                String payload = redisTemplate.opsForValue().get(UI_HISTORY_KEY);
+                String payload = redisTemplate.opsForValue().get(buildUiHistoryKey(safeUserId));
                 if (payload == null || payload.isBlank()) {
                     return new ArrayList<>();
                 }
@@ -217,44 +236,46 @@ public class ChatSessionService {
                         payload, new TypeReference<List<Map<String, Object>>>() {
                         });
                 List<Map<String, Object>> normalized = normalizeUiHistories(loaded);
-                fallbackUiHistories = normalized;
+                fallbackUiHistories.put(safeUserId, normalized);
                 return normalized;
             } catch (Exception e) {
-                logger.warn("Redis 读取 UI 历史失败，降级内存模式 - error: {}", e.getMessage());
+                logger.warn("Redis 读取 UI 历史失败，降级内存模式 - userId: {}, error: {}", safeUserId, e.getMessage());
             }
         }
-        return normalizeUiHistories(fallbackUiHistories);
+
+        List<Map<String, Object>> fallback = fallbackUiHistories.get(safeUserId);
+        return normalizeUiHistories(fallback);
     }
 
-    private void persistSession(ChatSession session, String operation) {
+    private void persistSession(Long userId, ChatSession session, String operation) {
         if (redisTemplate != null) {
             try {
-                saveSessionToRedis(session);
-                refreshUiHistoriesTtl();
-                fallbackSessions.remove(session.getSessionId());
+                saveSessionToRedis(userId, session);
+                refreshUiHistoriesTtl(userId);
+                fallbackSessions.remove(buildFallbackSessionKey(userId, session.getSessionId()));
                 return;
             } catch (Exception e) {
-                logger.warn("Redis {}失败，降级内存模式 - SessionId: {}, error: {}",
-                        operation, session.getSessionId(), e.getMessage());
+                logger.warn("Redis {}失败，降级内存模式 - userId: {}, sessionId: {}, error: {}",
+                        operation, userId, session.getSessionId(), e.getMessage());
             }
         }
 
-        fallbackSessions.put(session.getSessionId(), session);
+        fallbackSessions.put(buildFallbackSessionKey(userId, session.getSessionId()), session);
     }
 
-    private void saveSessionToRedis(ChatSession session) throws JsonProcessingException {
+    private void saveSessionToRedis(Long userId, ChatSession session) throws JsonProcessingException {
         SessionSnapshot snapshot = toSessionSnapshot(session);
         String payload = objectMapper.writeValueAsString(snapshot);
         redisTemplate.opsForValue().set(
-                buildSessionKey(session.getSessionId()),
+                buildSessionKey(userId, session.getSessionId()),
                 payload,
                 Math.max(1L, sessionTtlMinutes),
                 TimeUnit.MINUTES
         );
     }
 
-    private Optional<ChatSession> loadSessionFromRedis(String sessionId) throws JsonProcessingException {
-        String payload = redisTemplate.opsForValue().get(buildSessionKey(sessionId));
+    private Optional<ChatSession> loadSessionFromRedis(Long userId, String sessionId) throws JsonProcessingException {
+        String payload = redisTemplate.opsForValue().get(buildSessionKey(userId, sessionId));
         if (payload == null || payload.isBlank()) {
             return Optional.empty();
         }
@@ -306,8 +327,7 @@ public class ChatSessionService {
             }
         }
 
-        ChatSession session = new ChatSession(resolvedSessionId, createTime, history);
-        return session;
+        return new ChatSession(resolvedSessionId, createTime, history);
     }
 
     private SessionInfoResponse buildSessionInfoResponse(ChatSession session) {
@@ -318,8 +338,16 @@ public class ChatSessionService {
         return response;
     }
 
-    private String buildSessionKey(String sessionId) {
-        return SESSION_KEY_PREFIX + sessionId;
+    private String buildSessionKey(Long userId, String sessionId) {
+        return SESSION_KEY_PREFIX + userId + ":" + sessionId;
+    }
+
+    private String buildUiHistoryKey(Long userId) {
+        return UI_HISTORY_KEY_PREFIX + userId;
+    }
+
+    private String buildFallbackSessionKey(Long userId, String sessionId) {
+        return userId + ":" + sessionId;
     }
 
     private List<Map<String, Object>> normalizeUiHistories(List<Map<String, Object>> histories) {
@@ -347,30 +375,31 @@ public class ChatSessionService {
         return normalized;
     }
 
-    private void refreshUiHistoriesTtl() {
+    private void refreshUiHistoriesTtl(Long userId) {
         if (redisTemplate == null) {
             return;
         }
 
+        String uiHistoryKey = buildUiHistoryKey(userId);
         try {
-            Boolean exists = redisTemplate.hasKey(UI_HISTORY_KEY);
+            Boolean exists = redisTemplate.hasKey(uiHistoryKey);
             if (Boolean.TRUE.equals(exists)) {
-                redisTemplate.expire(UI_HISTORY_KEY, Math.max(1L, sessionTtlMinutes), TimeUnit.MINUTES);
+                redisTemplate.expire(uiHistoryKey, Math.max(1L, sessionTtlMinutes), TimeUnit.MINUTES);
             }
         } catch (Exception e) {
-            logger.warn("刷新 UI 历史 TTL 失败 - error: {}", e.getMessage());
+            logger.warn("刷新 UI 历史 TTL 失败 - userId: {}, error: {}", userId, e.getMessage());
         }
     }
 
     /**
      * 清理 UI 历史索引中的指定会话，避免会话被清空后左侧仍显示无效条目。
      */
-    private void removeUiHistory(String sessionId) {
+    private void removeUiHistory(Long userId, String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
 
-        List<Map<String, Object>> currentHistories = loadUiChatHistories();
+        List<Map<String, Object>> currentHistories = loadUiChatHistories(userId);
         if (currentHistories.isEmpty()) {
             return;
         }
@@ -387,8 +416,12 @@ public class ChatSessionService {
         }
 
         if (filtered.size() != currentHistories.size()) {
-            saveUiChatHistories(filtered);
+            saveUiChatHistories(userId, filtered);
         }
+    }
+
+    private Long normalizeUserId(Long userId) {
+        return userId == null ? 0L : userId;
     }
 
     private String safeToString(Object value) {

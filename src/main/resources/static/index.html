@@ -35,7 +35,17 @@
                         <!-- 历史对话列表将在这里动态生成 -->
                     </div>
                 </div>
-                
+
+                <div class="sidebar-user" id="sidebarUserInfo">
+                    <div class="sidebar-user-main">
+                        <div class="sidebar-user-avatar" id="sidebarUserAvatar">U</div>
+                        <div class="sidebar-user-meta">
+                            <div class="sidebar-user-label">当前账号</div>
+                            <div class="sidebar-user-name" id="sidebarUsername">-</div>
+                        </div>
+                    </div>
+                    <button class="sidebar-logout-btn" id="logoutBtn">退出登录</button>
+                </div>
             </div>
         </aside>
 
@@ -124,6 +134,64 @@
             <div class="loading-spinner"></div>
             <div class="loading-text">智能运维分析中，请稍候...</div>
             <div class="loading-subtext">后端正在处理，请耐心等待</div>
+        </div>
+    </div>
+
+    <div id="authOverlay" class="auth-overlay show">
+        <div class="auth-card">
+            <div class="auth-card-header">
+                <h2>欢迎使用智能运维助手</h2>
+                <p>请先登录或注册后继续使用</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button id="authTabLogin" class="auth-tab-btn active" type="button">登录</button>
+                <button id="authTabRegister" class="auth-tab-btn" type="button">注册</button>
+            </div>
+
+            <div id="authLoginPanel" class="auth-panel active">
+                <div class="auth-field">
+                    <label for="loginUsername">用户名</label>
+                    <input id="loginUsername" type="text" maxlength="10" placeholder="英文或数字，最多10位">
+                </div>
+                <div class="auth-field">
+                    <label for="loginPassword">密码</label>
+                    <input id="loginPassword" type="password" maxlength="64" placeholder="请输入密码">
+                </div>
+                <div class="auth-field">
+                    <label for="loginCaptchaInput">验证码</label>
+                    <div class="auth-captcha-row">
+                        <span id="loginCaptchaQuestion" class="auth-captcha-question">--</span>
+                        <button id="refreshLoginCaptchaBtn" class="auth-captcha-refresh" type="button">刷新</button>
+                    </div>
+                    <input id="loginCaptchaInput" type="text" maxlength="10" placeholder="请输入计算结果">
+                </div>
+                <button id="loginSubmitBtn" class="auth-submit-btn" type="button">登录</button>
+            </div>
+
+            <div id="authRegisterPanel" class="auth-panel">
+                <div class="auth-field">
+                    <label for="registerUsername">用户名</label>
+                    <input id="registerUsername" type="text" maxlength="10" placeholder="英文或数字，最多10位">
+                </div>
+                <div class="auth-field">
+                    <label for="registerPassword">密码</label>
+                    <input id="registerPassword" type="password" maxlength="64" placeholder="至少5位">
+                </div>
+                <div class="auth-field">
+                    <label for="registerConfirmPassword">确认密码</label>
+                    <input id="registerConfirmPassword" type="password" maxlength="64" placeholder="请再次输入密码">
+                </div>
+                <div class="auth-field">
+                    <label for="registerCaptchaInput">验证码</label>
+                    <div class="auth-captcha-row">
+                        <span id="registerCaptchaQuestion" class="auth-captcha-question">--</span>
+                        <button id="refreshRegisterCaptchaBtn" class="auth-captcha-refresh" type="button">刷新</button>
+                    </div>
+                    <input id="registerCaptchaInput" type="text" maxlength="10" placeholder="请输入计算结果">
+                </div>
+                <button id="registerSubmitBtn" class="auth-submit-btn" type="button">注册并登录</button>
+            </div>
         </div>
     </div>
 
