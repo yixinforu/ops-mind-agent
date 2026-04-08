@@ -92,6 +92,8 @@ chat:
   session:
     ttl-minutes: 10080
     max-window-size: 6
+    context-cache:
+      ttl-minutes: 60
 
 auth:
   jwt:

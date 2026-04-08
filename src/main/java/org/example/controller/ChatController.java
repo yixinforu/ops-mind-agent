@@ -82,7 +82,7 @@ public class ChatController {
 
             // Step 2: 读取会话历史，提供多轮上下文
             ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
-            List<Map<String, String>> history = chatSessionService.getHistory(session);
+            List<Map<String, String>> history = chatSessionService.getHistory(userId, session);
             logger.info("会话历史消息对数: {}", history.size() / 2);
 
             // Step 3: 创建模型与 Agent（包含工具与系统提示词）
@@ -98,8 +98,7 @@ public class ChatController {
             String fullAnswer = chatService.executeChat(agent, request.getQuestion());
             // Step 4: 回写会话历史并返回结果
             chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
-            logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}",
-                    session.getSessionId(), session.getMessagePairCount());
+            logger.info("已更新会话历史 - SessionId: {}", session.getSessionId());
             return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fullAnswer)));
 
         } catch (Exception e) {
@@ -208,7 +207,7 @@ public class ChatController {
 
                 // Step 2: 构建上下文与 Agent
                 ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
-                List<Map<String, String>> history = chatSessionService.getHistory(session);
+                List<Map<String, String>> history = chatSessionService.getHistory(userId, session);
                 logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
                 // 创建 DashScope API 和 ChatModel
                 DashScopeApi dashScopeApi = chatService.createDashScopeApi();
@@ -276,8 +275,7 @@ public class ChatController {
 
                                 // Step 4: 流结束后统一回写会话
                                 chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
-                                logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}",
-                                        session.getSessionId(), session.getMessagePairCount());
+                                logger.info("已更新会话历史 - SessionId: {}", session.getSessionId());
 
                                 emitter.send(SseEmitter.event()
                                         .name("message")

@@ -11,12 +11,18 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class ChatSession {
     private final String sessionId;
+    private final Long userId;
     private final List<Map<String, String>> messageHistory;
     private final long createTime;
     private final ReentrantLock lock;
 
     public ChatSession(String sessionId) {
+        this(sessionId, 0L);
+    }
+
+    public ChatSession(String sessionId, Long userId) {
         this.sessionId = sessionId;
+        this.userId = userId == null ? 0L : userId;
         this.messageHistory = new ArrayList<>();
         this.createTime = System.currentTimeMillis();
         this.lock = new ReentrantLock();
@@ -26,7 +32,15 @@ public class ChatSession {
      * 基于已有会话快照恢复会话对象
      */
     public ChatSession(String sessionId, long createTime, List<Map<String, String>> messageHistory) {
+        this(sessionId, 0L, createTime, messageHistory);
+    }
+
+    /**
+     * 基于已有会话快照恢复会话对象（包含 userId）
+     */
+    public ChatSession(String sessionId, Long userId, long createTime, List<Map<String, String>> messageHistory) {
         this.sessionId = sessionId;
+        this.userId = userId == null ? 0L : userId;
         this.createTime = createTime > 0 ? createTime : System.currentTimeMillis();
         this.messageHistory = new ArrayList<>();
         if (messageHistory != null) {
@@ -45,6 +59,10 @@ public class ChatSession {
 
     public String getSessionId() {
         return sessionId;
+    }
+
+    public Long getUserId() {
+        return userId;
     }
 
     public long getCreateTime() {
