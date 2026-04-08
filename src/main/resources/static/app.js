@@ -334,15 +334,19 @@ class SuperBizAgentApp {
         const isLogin = tab === 'login';
         if (this.authTabLogin) {
             this.authTabLogin.classList.toggle('active', isLogin);
+            this.authTabLogin.setAttribute('aria-selected', isLogin ? 'true' : 'false');
         }
         if (this.authTabRegister) {
             this.authTabRegister.classList.toggle('active', !isLogin);
+            this.authTabRegister.setAttribute('aria-selected', isLogin ? 'false' : 'true');
         }
         if (this.authLoginPanel) {
             this.authLoginPanel.classList.toggle('active', isLogin);
+            this.authLoginPanel.setAttribute('aria-hidden', isLogin ? 'false' : 'true');
         }
         if (this.authRegisterPanel) {
             this.authRegisterPanel.classList.toggle('active', !isLogin);
+            this.authRegisterPanel.setAttribute('aria-hidden', isLogin ? 'true' : 'false');
         }
     }
 
@@ -1786,43 +1790,21 @@ class SuperBizAgentApp {
 
     // 显示通知
     showNotification(message, type = 'info') {
-        // 创建通知元素
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: 500;
-            z-index: 13010;
-            animation: slideIn 0.3s ease;
-            max-width: 300px;
-        `;
+        notification.setAttribute('role', 'status');
+        notification.setAttribute('aria-live', 'polite');
 
-        // 根据类型设置颜色（Google Material Design配色）
-        const colors = {
-            info: '#1a73e8',
-            success: '#34a853',
-            warning: '#fbbc04',
-            error: '#ea4335'
-        };
-        notification.style.backgroundColor = colors[type] || colors.info;
-
-        // 添加到页面
         document.body.appendChild(notification);
 
-        // 3秒后自动移除
         setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
+            notification.style.animation = 'notificationOut 0.24s ease';
             setTimeout(() => {
                 if (notification.parentNode) {
                     notification.parentNode.removeChild(notification);
                 }
-            }, 300);
+            }, 240);
         }, 3000);
     }
 

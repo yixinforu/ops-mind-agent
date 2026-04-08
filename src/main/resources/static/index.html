@@ -149,48 +149,54 @@
                 <button id="authTabRegister" class="auth-tab-btn" type="button">注册</button>
             </div>
 
-            <div id="authLoginPanel" class="auth-panel active">
-                <div class="auth-field">
-                    <label for="loginUsername">用户名</label>
-                    <input id="loginUsername" type="text" maxlength="10" placeholder="英文或数字，最多10位">
-                </div>
-                <div class="auth-field">
-                    <label for="loginPassword">密码</label>
-                    <input id="loginPassword" type="password" maxlength="64" placeholder="请输入密码">
-                </div>
-                <div class="auth-field">
-                    <label for="loginCaptchaInput">验证码</label>
-                    <div class="auth-captcha-row">
-                        <span id="loginCaptchaQuestion" class="auth-captcha-question">--</span>
-                        <button id="refreshLoginCaptchaBtn" class="auth-captcha-refresh" type="button">刷新</button>
+            <div class="auth-panels">
+                <div id="authLoginPanel" class="auth-panel active" aria-hidden="false">
+                    <div class="auth-field">
+                        <label for="loginUsername">用户名</label>
+                        <input id="loginUsername" type="text" maxlength="10" placeholder="英文或数字，最多10位">
                     </div>
-                    <input id="loginCaptchaInput" type="text" maxlength="10" placeholder="请输入计算结果">
+                    <div class="auth-field">
+                        <label for="loginPassword">密码</label>
+                        <input id="loginPassword" type="password" maxlength="64" placeholder="请输入密码">
+                    </div>
+                    <div class="auth-field">
+                        <label for="loginCaptchaInput">验证码</label>
+                        <div class="auth-captcha-row">
+                            <span id="loginCaptchaQuestion" class="auth-captcha-question">--</span>
+                            <button id="refreshLoginCaptchaBtn" class="auth-captcha-refresh" type="button">刷新</button>
+                        </div>
+                        <input id="loginCaptchaInput" type="text" maxlength="10" placeholder="请输入计算结果">
+                    </div>
+                    <div class="auth-actions">
+                        <button id="loginSubmitBtn" class="auth-submit-btn" type="button">登录</button>
+                    </div>
                 </div>
-                <button id="loginSubmitBtn" class="auth-submit-btn" type="button">登录</button>
-            </div>
 
-            <div id="authRegisterPanel" class="auth-panel">
-                <div class="auth-field">
-                    <label for="registerUsername">用户名</label>
-                    <input id="registerUsername" type="text" maxlength="10" placeholder="英文或数字，最多10位">
-                </div>
-                <div class="auth-field">
-                    <label for="registerPassword">密码</label>
-                    <input id="registerPassword" type="password" maxlength="64" placeholder="至少5位">
-                </div>
-                <div class="auth-field">
-                    <label for="registerConfirmPassword">确认密码</label>
-                    <input id="registerConfirmPassword" type="password" maxlength="64" placeholder="请再次输入密码">
-                </div>
-                <div class="auth-field">
-                    <label for="registerCaptchaInput">验证码</label>
-                    <div class="auth-captcha-row">
-                        <span id="registerCaptchaQuestion" class="auth-captcha-question">--</span>
-                        <button id="refreshRegisterCaptchaBtn" class="auth-captcha-refresh" type="button">刷新</button>
+                <div id="authRegisterPanel" class="auth-panel" aria-hidden="true">
+                    <div class="auth-field">
+                        <label for="registerUsername">用户名</label>
+                        <input id="registerUsername" type="text" maxlength="10" placeholder="英文或数字，最多10位">
                     </div>
-                    <input id="registerCaptchaInput" type="text" maxlength="10" placeholder="请输入计算结果">
+                    <div class="auth-field">
+                        <label for="registerPassword">密码</label>
+                        <input id="registerPassword" type="password" maxlength="64" placeholder="至少5位">
+                    </div>
+                    <div class="auth-field">
+                        <label for="registerConfirmPassword">确认密码</label>
+                        <input id="registerConfirmPassword" type="password" maxlength="64" placeholder="请再次输入密码">
+                    </div>
+                    <div class="auth-field">
+                        <label for="registerCaptchaInput">验证码</label>
+                        <div class="auth-captcha-row">
+                            <span id="registerCaptchaQuestion" class="auth-captcha-question">--</span>
+                            <button id="refreshRegisterCaptchaBtn" class="auth-captcha-refresh" type="button">刷新</button>
+                        </div>
+                        <input id="registerCaptchaInput" type="text" maxlength="10" placeholder="请输入计算结果">
+                    </div>
+                    <div class="auth-actions">
+                        <button id="registerSubmitBtn" class="auth-submit-btn" type="button">注册并登录</button>
+                    </div>
                 </div>
-                <button id="registerSubmitBtn" class="auth-submit-btn" type="button">注册并登录</button>
             </div>
         </div>
     </div>
