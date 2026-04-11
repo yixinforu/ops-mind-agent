@@ -154,7 +154,7 @@ export DASHSCOPE_API_KEY=your-api-key
 方法一： 手动启动
 ```bash
 1.先启动向量数据库
-docker compose up -d -f vector-database.yml
+docker compose up -d -f docker-compose.yml
 
 2.启动服务
 mvn clean install

@@ -106,6 +106,32 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    container_name: ops-mind-agent
+    image: eclipse-temurin:17-jre
+    working_dir: /app
+    command: ["java", "-jar", "/app/ops-mind-agent.jar"]
+    volumes:
+      - ./ops-mind-agent.jar:/app/ops-mind-agent.jar:ro
+      - ./uploads:/app/uploads
+    ports:
+      - "9900:9900"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/aiops_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root123456
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      MILVUS_HOST: standalone
+      MILVUS_PORT: 19530
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      standalone:
+        condition: service_healthy
+
 networks:
   default:
     name: milvus
