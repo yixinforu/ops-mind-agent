@@ -2,7 +2,7 @@
 # 用于自动化项目启动、健康检查与文档向量化
 
 # 配置变量
-SERVER_URL = http://localhost:9900
+SERVER_URL = http://localhost:8600
 UPLOAD_API = $(SERVER_URL)/api/upload
 DOCS_DIR = aiops-docs
 HEALTH_CHECK_API = $(SERVER_URL)/milvus/health

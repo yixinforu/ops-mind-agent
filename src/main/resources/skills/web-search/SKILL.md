@@ -24,6 +24,9 @@ Use this skill when the user needs recent or public information from the interne
 - Summarize the search findings instead of copying long passages.
 - Always keep and cite the source links in the answer.
 - Prefer official websites, vendor documentation, project release pages, or high-quality public references.
+- When the user asks for latest, current, recent, today, or this week information, prioritize the newest results by published date or last updated date.
+- If the returned results are older than the user's requested time range, explicitly say that the available sources are not from today or not from the latest period.
+- Mention exact dates when answering time-sensitive questions instead of vague wording.
 - If no reliable result is found, state that clearly and do not fabricate external facts.
 - Do not treat public search results as internal company facts.
 

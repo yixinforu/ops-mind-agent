@@ -32,17 +32,33 @@ public class WebSearchTools {
     /**
      * 查询公开网络资料。
      */
-    @Tool(description = "Search public web information for recent updates, official announcements, documentation, news, and other external references. " +
+    @Tool(name = "searchWeb", description = "Search public web information for recent updates, official announcements, documentation, news, and other external references. " +
             "Use this tool when the user asks about the latest public information, official websites, releases, announcements, or external materials. " +
             "Always summarize the results and keep the source links.")
     public String searchWeb(
             @ToolParam(description = "Search query for the latest public information, official documentation, announcements, or news")
             String query) {
+        return doSearch(query);
+    }
+
+    /**
+     * 兼容 Skills Hook 可能直接使用 skill 名称发起工具调用的场景。
+     */
+    @Tool(name = "web-search", description = "Search public web information for recent updates, official announcements, documentation, news, and other external references. " +
+            "Use this tool when the user asks about the latest public information, official websites, releases, announcements, or external materials. " +
+            "Always summarize the results and keep the source links.")
+    public String webSearch(
+            @ToolParam(description = "Search query for the latest public information, official documentation, announcements, or news")
+            String query) {
+        return doSearch(query);
+    }
+
+    private String doSearch(String query) {
         try {
             WebSearchResult result = webSearchClient.search(query);
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result);
         } catch (Exception e) {
-            logger.error("[工具错误] searchWeb 执行失败 - Query: {}", query, e);
+            logger.error("[工具错误] 网络搜索执行失败 - Query: {}", query, e);
             return buildErrorResult(e.getMessage(), query);
         }
     }

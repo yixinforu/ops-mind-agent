@@ -10,6 +10,7 @@ import com.ops.agent.tool.DateTimeTools;
 import com.ops.agent.tool.InternalDocsTools;
 import com.ops.agent.tool.QueryLogsTools;
 import com.ops.agent.tool.QueryMetricsTools;
+import com.ops.agent.tool.WebSearchTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
@@ -19,6 +20,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +42,9 @@ public class ChatService {
 
     @Autowired
     private QueryMetricsTools queryMetricsTools;
+
+    @Autowired(required = false)
+    private WebSearchTools webSearchTools;
 
     @Autowired(required = false)  // Mock 模式下才注册，所以设置为 optional,真实环境通过mcp配置注入
     private QueryLogsTools queryLogsTools;
@@ -101,7 +107,11 @@ public class ChatService {
         StringBuilder systemPromptBuilder = new StringBuilder();
         
         // 基础系统提示
+        String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         systemPromptBuilder.append("你是一个专业的智能助手，可以获取当前时间、查询天气信息、搜索内部文档知识库，以及查询 Prometheus 告警信息。\n");
+        systemPromptBuilder.append("当前系统时间是: ").append(now).append("。请将它视为回答时间敏感问题时的当前时间基准。\n");
+        systemPromptBuilder.append("如果用户询问今天、最新、最近、当前、本周、本月、今年等时间敏感问题，必须优先依据最新时间范围内的信息回答，并明确写出具体日期。\n");
+        systemPromptBuilder.append("如果联网搜索返回的信息不是今天或不是最新周期内的数据，需要明确告诉用户结果对应的具体日期，不能把旧数据表述成今天的数据。\n");
         systemPromptBuilder.append("当用户询问时间相关问题时，使用 getCurrentDateTime 工具。\n");
         systemPromptBuilder.append("当用户需要查询公司内部文档、流程、最佳实践或技术指南时，使用 queryInternalDocs 工具。\n");
         systemPromptBuilder.append("当用户需要查询 Prometheus 告警、监控指标或系统告警状态时，使用 queryPrometheusAlerts 工具。\n");
@@ -135,10 +145,14 @@ public class ChatService {
     public Object[] buildMethodToolsArray() {
         if (queryLogsTools != null) {
             // Mock 模式：包含 QueryLogsTools
-            return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
+            return webSearchTools != null
+                    ? new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools, webSearchTools}
+                    : new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
         } else {
             // 真实模式：不包含 QueryLogsTools（由 MCP 提供日志查询功能）
-            return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools};
+            return webSearchTools != null
+                    ? new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, webSearchTools}
+                    : new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools};
         }
     }
 

@@ -116,7 +116,7 @@ services:
       - ./ops-mind-agent.jar:/app/ops-mind-agent.jar:ro
       - ./uploads:/app/uploads
     ports:
-      - "9900:9900"
+      - "8600:8600"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/aiops_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
       SPRING_DATASOURCE_USERNAME: root
