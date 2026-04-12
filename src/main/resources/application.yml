@@ -114,3 +114,12 @@ prometheus:
 # CLS 云日志服务配置
 cls:
   mock-enabled: true  # 是否启用 Mock 模式（用于测试，设为 true 返回与告警关联的模拟日志数据）
+
+# 网络搜索 Skill 配置
+search:
+  enabled: true
+  provider: tavily
+  api-key: "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"
+  base-url: https://api.tavily.com/search
+  max-results: 5
+  timeout-seconds: 15

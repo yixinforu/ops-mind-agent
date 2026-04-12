@@ -4,6 +4,7 @@ import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import org.example.agent.tool.DateTimeTools;
 import org.example.agent.tool.InternalDocsTools;
@@ -16,6 +17,7 @@ import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -44,8 +46,17 @@ public class ChatService {
     @Autowired
     private ToolCallbackProvider tools;
 
+    @Autowired(required = false)
+    private SkillsAgentHook skillsAgentHook;
+
     @Value("${spring.ai.dashscope.api-key}")
     private String dashScopeApiKey;
+
+    @Value("${search.enabled:false}")
+    private boolean searchEnabled;
+
+    @Value("${search.api-key:}")
+    private String searchApiKey;
 
     /**
      * 创建 DashScope API 实例
@@ -95,6 +106,7 @@ public class ChatService {
         systemPromptBuilder.append("当用户需要查询公司内部文档、流程、最佳实践或技术指南时，使用 queryInternalDocs 工具。\n");
         systemPromptBuilder.append("当用户需要查询 Prometheus 告警、监控指标或系统告警状态时，使用 queryPrometheusAlerts 工具。\n");
         systemPromptBuilder.append("当用户需要查询腾讯云日志时，请调用腾讯云mcp服务查询,默认查询地域ap-guangzhou,查询时间范围为近一个月。\n\n");
+        systemPromptBuilder.append("如果当前问题依赖特定技能，请先阅读并使用可用的 skills，再调用对应工具。\n\n");
         
         // 添加历史消息
         if (!history.isEmpty()) {
@@ -155,6 +167,18 @@ public class ChatService {
      * @return 配置好的 ReactAgent
      */
     public ReactAgent createReactAgent(DashScopeChatModel chatModel, String systemPrompt) {
+        if (isWebSearchSkillEnabled()) {
+            logger.info("启用官方 skills 能力: web-search");
+            return ReactAgent.builder()
+                    .name("intelligent_assistant")
+                    .model(chatModel)
+                    .systemPrompt(systemPrompt)
+                    .methodTools(buildMethodToolsArray())
+                    .tools(getToolCallbacks())
+                    .hooks(List.of(skillsAgentHook))
+                    .build();
+        }
+
         return ReactAgent.builder()
                 .name("intelligent_assistant")
                 .model(chatModel)
@@ -162,6 +186,10 @@ public class ChatService {
                 .methodTools(buildMethodToolsArray())
                 .tools(getToolCallbacks())
                 .build();
+    }
+
+    private boolean isWebSearchSkillEnabled() {
+        return searchEnabled && StringUtils.hasText(searchApiKey) && skillsAgentHook != null;
     }
 
     /**

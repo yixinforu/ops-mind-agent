@@ -17,6 +17,7 @@
 - ✅ **RAG 问答**: 向量检索 + 多轮对话 + 流式输出
 - ✅ **AIOps 运维**: 智能诊断 + 多 Agent 协作 + 自动报告
 - ✅ **工具集成**: 文档检索、告警查询、日志分析、时间工具
+- ✅ **Skills 集成**: 基于官方 SkillsAgentHook 挂载技能目录，支持按需启用网络搜索 Skill
 - ✅ **会话管理**: 上下文维护、历史管理、自动清理
 - ✅ **Web 界面**: 提供测试界面和 RESTful API
 
@@ -26,7 +27,7 @@
 | 技术 | 版本 | 说明 |
 |------|------|------|
 | Java | 17 | 开发语言 |
-| Spring Boot | 3.2.0 | 应用框架 |
+| Spring Boot | 3.5.0 | 应用框架 |
 | Spring AI | - | AI Agent 框架 |
 | DashScope | 2.17.0 | 阿里云 AI 服务 |
 | Milvus | 2.6.10 | 向量数据库 |
@@ -50,11 +51,18 @@ SuperBizAgent/
 │   │   └── QueryLogsTools.java        # 日志查询
 │   └── config/                        # 配置类
 ├── src/main/resources/
+│   ├── skills/                        # 官方 Skill 目录
 │   ├── static/                        # Web 界面
 │   └── application.yml                # 应用配置
 └── aiops-docs/                        # 运维文档库
 ```
 
+
+## 🧠 Skills
+
+- `web-search`: 通过 `src/main/resources/skills/web-search/SKILL.md` 声明网络搜索技能
+- 技能运行方式: 使用官方 `ClasspathSkillRegistry` + `SkillsAgentHook`
+- 对应工具: `searchWeb`，用于搜索公开互联网信息并返回来源链接
 
 ## 📡 核心接口
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能运维助手</title>
+    <title>小维助手</title>
     <link rel="stylesheet" href="styles.css">
     <!-- Markdown 渲染库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
@@ -16,7 +16,7 @@
         <!-- 左侧边栏 -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h2 class="sidebar-title">智能运维助手</h2>
+                <h2 class="sidebar-title">小维助手</h2>
             </div>
             
             <div class="sidebar-content">
@@ -51,17 +51,17 @@
 
         <!-- 主内容区域 -->
         <main class="main-content">
-            <button class="ai-ops-top-btn" id="aiOpsSidebarBtn">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <button class="ai-ops-fab" id="aiOpsSidebarBtn">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M13.2 2L5 13.1H10.4L9.4 22L18.8 9.4H13.1L13.2 2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="6.2" cy="18.2" r="1.3" fill="currentColor"/>
+                    <circle cx="18.1" cy="5.8" r="1.3" fill="currentColor"/>
                 </svg>
                 <span>AI Ops</span>
             </button>
             <div class="chat-container">
                 <div class="welcome-greeting" id="welcomeGreeting">
-                    <p>你好！我是智能运维小助手</p>
+                    <p>你好！我是小维助手</p>
                 </div>
                 <div class="chat-messages" id="chatMessages">
                 </div>
@@ -69,7 +69,7 @@
                 <div class="chat-input-container">
                     <div class="input-group-wrapper">
                         <div class="input-wrapper">
-                            <input type="text" id="messageInput" placeholder="问问智能运维助手" maxlength="1000" class="message-input">
+                            <input type="text" id="messageInput" placeholder="问问小维助手" maxlength="1000" class="message-input">
                             <div class="input-bottom-bar">
                                 <div class="tools-btn-wrapper">
                                     <button class="tools-btn" id="toolsBtn" title="更多选项">
@@ -140,7 +140,7 @@
     <div id="authOverlay" class="auth-overlay show">
         <div class="auth-card">
             <div class="auth-card-header">
-                <h2>欢迎使用智能运维助手</h2>
+                <h2>欢迎使用小维助手</h2>
                 <p>请先登录或注册后继续使用</p>
             </div>
 

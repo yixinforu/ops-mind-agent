@@ -1286,7 +1286,7 @@ class SuperBizAgentApp {
         // 更新输入框状态
         if (this.messageInput) {
             this.messageInput.disabled = this.isStreaming;
-            this.messageInput.placeholder = '问问智能运维助手';
+            this.messageInput.placeholder = '问问小维助手';
         }
     }
 

@@ -111,6 +111,7 @@ services:
     image: eclipse-temurin:17-jre
     working_dir: /app
     command: ["java", "-jar", "/app/ops-mind-agent.jar"]
+    profiles: ["app"]
     volumes:
       - ./ops-mind-agent.jar:/app/ops-mind-agent.jar:ro
       - ./uploads:/app/uploads
