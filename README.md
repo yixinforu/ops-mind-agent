@@ -1,69 +1,132 @@
 <div align="center">
+  <p><strong>CN <a href="./README.zh-CN.md">中文</a> | US English</strong></p>
   <h1>Ops Mind Agent</h1>
-  <p><strong>面向智能运维场景的 Agent 应用</strong></p>
-  <p>智能运维 · 知识增强 · Skills 扩展 · AI Ops · 流式交互</p>
-  <p>
-    前端产品形态：<strong>小维助手</strong>
-    <br />
-    <a href="./README.en.md">英文版 README</a>
-  </p>
+  <p><strong>A production-oriented AI agent application for intelligent operations workflows</strong></p>
+  <p>Streaming Chat · AI Ops · RAG · Skills · Multi-User Session Management</p>
+  <p>Product-facing UI: <strong>Xiaowei Assistant</strong></p>
 </div>
 
-## 项目概览
+## Overview
 
-`Ops Mind Agent` 是一套面向智能运维场景设计的 Agent 系统。项目将 `Spring AI`、知识库检索、官方 `Skills` 机制、流式交互以及业务化会话管理整合在同一套工程中，用于承载运维问答、告警分析、知识检索与联网搜索等核心场景。
+`Ops Mind Agent` is a production-oriented agent system built for intelligent operations scenarios rather than a thin chat wrapper around an LLM. It combines conversational interaction, alert analysis, document retrieval, public web search, session persistence, and multi-user access control into a single deployable engineering baseline.
 
-当前前端产品形态为 **小维助手**，同时保留更偏流程化分析的 `AI Ops` 入口，使项目既适合自然语言交互，也适合结构化运维分析。
+The project is designed to look and behave like a real product: users can sign in, continue prior conversations, trigger an `AI Ops` workflow from a dedicated entry point, upload knowledge documents, and ask follow-up questions against both internal and public sources.
 
-## 核心亮点
+## Product Value
 
-| 能力 | 说明 |
+This project is aimed at teams that need more than a playground demo. It provides a practical baseline for building an AI-powered operations assistant with clear product shape and extensible engineering foundations.
+
+It is especially useful when you need to combine:
+
+- conversational assistance for day-to-day operations work
+- structured alert interpretation and report generation
+- internal knowledge retrieval with vector search
+- public web search for time-sensitive questions
+- user isolation, session continuity, and deployable runtime support
+
+## Key Capabilities
+
+| Capability | Description |
 | --- | --- |
-| 流式对话 | 支持普通问答与 `SSE` 流式输出，响应过程可逐步展示 |
-| AI Ops 工作流 | 支持 `/api/ai_ops` 流式生成分析过程与运维报告 |
-| RAG 检索链路 | 支持 Markdown/TXT 文档上传、分片、向量化与 Milvus 检索增强 |
-| Skills 集成 | 已接入 Spring AI 官方 Skills 机制，内置 `web-search` 搜索技能 |
-| 会话持久化 | 用户、会话、消息持久化到 MySQL，Redis 用于高频上下文缓存与状态辅助 |
-| 认证与隔离 | 支持注册、登录、验证码、JWT 鉴权与多用户会话隔离 |
+| Streaming Conversation | Supports standard chat and `SSE`-based streaming output for a more responsive user experience |
+| AI Ops Workflow | `/api/ai_ops` streams analysis progress and operations reports instead of returning a single static response |
+| Context-Aware Sessions | Supports recent sessions, full message history retrieval, and contextual follow-up interactions |
+| Knowledge-Augmented QA | Uploads Markdown/TXT files, chunks them, indexes them into Milvus, and uses retrieval for grounded answers |
+| Skills-Based Extension | Integrates official Spring AI `Skills` with built-in `web-search` capability for public internet search |
+| Authentication & Isolation | Supports registration, login, captcha, JWT authentication, and user-level session isolation |
+| Persistent Data Layer | Persists users, sessions, and messages in MySQL, with Redis for high-frequency state and cache support |
+| Deployment Flexibility | Supports both local development mode and server-side containerized deployment |
 
-## 产品形态
+## Production-Oriented Design
 
-### 小维助手
+Many LLM demos stop at a single chat box. This project goes further in several important ways:
 
-主对话入口面向自然语言交互，适合承载日常运维咨询、知识问答和基于上下文的连续追问。
+- It has a user system instead of anonymous one-off usage
+- It preserves session continuity rather than treating every question as isolated
+- It provides a dedicated `AI Ops` path for alert analysis and operations reporting
+- It combines RAG and Skills instead of depending on model memory alone
+- It supports both engineering experimentation and actual deployment workflows
 
-### AI Ops 接口
+This makes the project suitable not only for demos, but also as a serious starting point for an internal operations assistant.
 
-页面右下角的 `AI Ops` 按钮用于触发智能运维分析链路。当前接口支持流式输出，可逐步渲染分析过程和最终报告，并将分析结果并入当前会话上下文，便于后续继续追问。
+## Product Surface
 
-### 知识增强
+### Xiaowei Assistant
 
-项目同时具备两类知识增强路径：
+The main product-facing interface is **Xiaowei Assistant**, designed for natural language interaction. It is suitable for routine operations Q&A, contextual troubleshooting, knowledge lookup, and continued follow-up conversations.
 
-- 内部知识：基于 `aiops-docs` 与上传文档构建 RAG 检索能力
-- 外部知识：基于 `web-search` Skill 调用公网搜索补充时效性信息
+### AI Ops Entry
 
-## 系统架构
+The floating `AI Ops` button provides a dedicated workflow-oriented entry point for alert analysis. Instead of acting like generic chat, it focuses on structured operational reasoning, report generation, and flowing the result back into the same session context.
 
-系统由四个层次组成：
+### Knowledge and Search Layer
 
-- 前端层：负责登录注册、对话交互、AI Ops 展示、近期会话管理
-- 应用层：基于 `Spring Boot 3` 与 `Spring AI` 负责鉴权、上下文编排、Agent 执行与 SSE 推送
-- 数据层：MySQL 持久化用户、会话、消息；Redis 负责验证码、登录限制与上下文窗口缓存
-- 检索与扩展层：Milvus 提供向量检索，Tavily 提供联网搜索能力，Skills 负责能力挂载
+The project combines two complementary augmentation paths:
 
-典型调用链路：
+- Internal knowledge: RAG retrieval from `aiops-docs` and uploaded documents
+- External knowledge: public internet search powered by the `web-search` Skill
+
+This gives the assistant both enterprise memory and external freshness.
+
+## Product Features
+
+### Conversation Assistant
+
+- normal chat and streaming chat modes
+- contextual follow-up questions in the same session
+- recent conversations list and full message retrieval
+- natural continuation after `AI Ops` execution
+
+### AI Ops Analysis
+
+- dedicated entry separate from general chat
+- streaming operational reasoning output
+- alert-oriented analysis flow
+- final report generation and session integration
+
+### Knowledge-Augmented Experience
+
+- upload `txt` and `md` files
+- automatic file persistence and overwrite by original filename
+- automatic vector indexing after upload
+- Milvus-backed semantic retrieval for grounded responses
+
+### Public Search Capability
+
+- built-in `web-search` Skill
+- designed for latest, current, recent, and public information lookups
+- supports time-sensitive search handling and source-aware answers
+- complements internal knowledge instead of replacing it
+
+### Multi-User Product Experience
+
+- registration and login flow
+- captcha verification
+- JWT-based authentication
+- user-specific sessions and message history
+- recent conversations behavior closer to a real product than a sandbox demo
+
+## Architecture
+
+The system is organized into four layers:
+
+- Frontend layer: login, registration, chat interaction, AI Ops display, recent-session management
+- Application layer: `Spring Boot 3` + `Spring AI` for authentication, session orchestration, agent execution, tool routing, and SSE delivery
+- Data layer: MySQL for users, sessions, and messages; Redis for captcha, login restrictions, session-related cache, and high-frequency state
+- Retrieval and extension layer: Milvus for vector search, Tavily for public web search, and Skills for capability registration
+
+Typical request flow:
 
 ```text
-浏览器
-  -> 认证 / 对话 / AI Ops 接口
-  -> 会话上下文组装
-  -> 工具 / Skills / RAG 检索
-  -> DashScope 大模型
-  -> SSE 流式输出或 JSON 响应
+Browser
+  -> Auth / Chat / AI Ops API
+  -> Session Context Assembly
+  -> Tools / Skills / RAG Retrieval
+  -> DashScope LLM
+  -> SSE Stream or JSON Response
 ```
 
-## 技术栈
+## Tech Stack
 
 - `Java 17`
 - `Spring Boot 3.5.0`
@@ -76,24 +139,24 @@
 - `JWT`
 - `Tavily Search`
 
-## 快速开始
+## Quick Start
 
-### 模式 A：本地开发
+### Mode A: Local Development
 
-适合本地联调和代码开发，依赖组件由 Docker 承载，应用本身以本地进程运行。
+This mode is intended for coding and debugging. Infrastructure runs in Docker, while the Spring Boot application runs as a local process.
 
 ```bash
 make init-local
 ```
 
-该命令会完成：
+This command will:
 
-1. 启动 MySQL、Redis、Milvus 等中间件容器
-2. 本地后台启动 Spring Boot 服务
-3. 等待健康检查通过
-4. 自动上传 `aiops-docs` 中的 Markdown 文档到知识库
+1. Start MySQL, Redis, Milvus, and other infrastructure containers
+2. Start the Spring Boot service locally in the background
+3. Wait for the health check to pass
+4. Upload Markdown documents from `aiops-docs` into the knowledge base
 
-常用命令：
+Common commands:
 
 ```bash
 make up-local
@@ -103,21 +166,21 @@ make logs-local
 make upload
 ```
 
-### 模式 B：服务器部署
+### Mode B: Server Deployment
 
-适合远程服务器部署，由 Docker 统一托管应用和依赖服务。
+This mode is intended for remote deployment, with Docker managing both the application and its dependencies.
 
 ```bash
 make init
 ```
 
-该命令会完成：
+This command will:
 
-1. 启动完整 Docker Compose 服务
-2. 等待 MySQL、Redis、Milvus 与应用服务就绪
-3. 自动上传 `aiops-docs` 中的 Markdown 文档到知识库
+1. Start the full Docker Compose stack
+2. Wait until MySQL, Redis, Milvus, and the application are ready
+3. Upload Markdown documents from `aiops-docs` into the knowledge base
 
-常用命令：
+Common commands:
 
 ```bash
 make up
@@ -126,98 +189,104 @@ make restart
 make logs
 ```
 
-服务器模式下需要注意：
+Notes for server mode:
 
-- `ops-mind-agent.jar` 需要与 `docker-compose.yml` 位于同一级目录
-- `app` 服务通过 `--profile app` 启用
-- 容器内使用 `eclipse-temurin:17-jre` 启动应用，无需宿主机单独安装 JDK
+- `ops-mind-agent.jar` must be placed in the same directory as `docker-compose.yml`
+- the `app` service is enabled through the `--profile app` profile
+- the container runs on `eclipse-temurin:17-jre`, so no host-level JDK is required
 
-## 运行命令
+## Runtime Commands
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `make init` | 服务器模式一键初始化，启动全部容器并上传文档 |
-| `make up` | 服务器模式启动全部容器，包含 `app` 容器 |
-| `make start` | 启动应用容器 |
-| `make stop` | 停止应用容器 |
-| `make restart` | 重启应用容器 |
-| `make logs` | 查看应用容器日志 |
-| `make init-local` | 本地模式一键初始化，中间件容器 + 本地 Spring Boot 服务 |
-| `make up-local` | 仅启动本地依赖中间件 |
-| `make start-local` | 本地启动 Spring Boot 服务 |
-| `make stop-local` | 停止本地 Spring Boot 服务 |
-| `make restart-local` | 重启本地 Spring Boot 服务 |
-| `make logs-local` | 查看本地服务日志 |
-| `make upload` | 上传 `aiops-docs` 目录下文档并写入向量库 |
-| `make down` | 停止 Docker Compose 服务 |
-| `make status` | 查看容器状态 |
+| `make init` | Full server-side initialization, including containers and document upload |
+| `make up` | Start the full container stack, including the app container |
+| `make start` | Start the app container |
+| `make stop` | Stop the app container |
+| `make restart` | Restart the app container |
+| `make logs` | View app container logs |
+| `make init-local` | Full local initialization with infra containers and local Spring Boot runtime |
+| `make up-local` | Start only local infrastructure containers |
+| `make start-local` | Start the Spring Boot service locally |
+| `make stop-local` | Stop the local Spring Boot service |
+| `make restart-local` | Restart the local Spring Boot service |
+| `make logs-local` | View local service logs |
+| `make upload` | Upload files in `aiops-docs` into the vector knowledge base |
+| `make down` | Stop Docker Compose services |
+| `make status` | Check container status |
 
-## 接口概览
+## APIs
 
-### 认证接口
+### Auth
 
-| 接口 | 说明 |
+| Endpoint | Description |
 | --- | --- |
-| `GET /api/auth/captcha` | 获取验证码 |
-| `POST /api/auth/register` | 注册并自动登录 |
-| `POST /api/auth/login` | 用户登录 |
-| `POST /api/auth/logout` | 退出登录 |
-| `GET /api/auth/me` | 获取当前用户信息 |
+| `GET /api/auth/captcha` | Get captcha |
+| `POST /api/auth/register` | Register and auto-login |
+| `POST /api/auth/login` | Login |
+| `POST /api/auth/logout` | Logout |
+| `GET /api/auth/me` | Get current user information |
 
-### 对话接口
+### Chat
 
-| 接口 | 说明 |
+| Endpoint | Description |
 | --- | --- |
-| `POST /api/chat` | 普通问答接口 |
-| `POST /api/chat_stream` | SSE 流式对话接口 |
-| `POST /api/chat/clear` | 清空指定会话历史 |
-| `POST /api/chat/histories` | 保存前端近期对话列表 |
-| `GET /api/chat/histories` | 获取前端近期对话列表 |
-| `GET /api/chat/session/messages/{sessionId}` | 获取指定会话完整消息历史 |
-| `GET /api/chat/session/{sessionId}` | 获取指定会话信息 |
+| `POST /api/chat` | Standard chat API |
+| `POST /api/chat_stream` | SSE streaming chat API |
+| `POST /api/chat/clear` | Clear a specific conversation history |
+| `POST /api/chat/histories` | Save frontend recent-session list |
+| `GET /api/chat/histories` | Get frontend recent-session list |
+| `GET /api/chat/session/messages/{sessionId}` | Get full message history of a session |
+| `GET /api/chat/session/{sessionId}` | Get session metadata |
 
-### AI Ops 接口
+### AI Ops
 
-| 接口 | 说明 |
+| Endpoint | Description |
 | --- | --- |
-| `POST /api/ai_ops` | AI Ops 流式分析与报告输出 |
+| `POST /api/ai_ops` | Streaming operations analysis and report generation |
 
-### 健康检查
+### Knowledge Upload
 
-| 接口 | 说明 |
+| Endpoint | Description |
 | --- | --- |
-| `GET /milvus/health` | 应用与向量能力健康检查 |
+| `POST /api/upload` | Upload documents and trigger vector indexing |
 
-## 知识库
+### Health
 
-项目默认将 `aiops-docs` 作为初始知识文档目录：
+| Endpoint | Description |
+| --- | --- |
+| `GET /milvus/health` | Health check for the application and vector services |
+
+## Knowledge Base
+
+The default initial document directory is:
 
 ```text
 aiops-docs/
 ```
 
-当前上传接口：
+Upload API:
 
 ```http
 POST /api/upload
 ```
 
-文档导入特性：
+Document import behavior:
 
-- 支持 `txt`、`md` 文件上传
-- 按原始文件名保存，可覆盖同名文件
-- 上传成功后自动构建向量索引
-- 适用于初始化运维文档、测试 RAG 与向量搜索效果
+- supports `txt` and `md`
+- keeps original filenames and allows overwrite on duplicate upload
+- automatically builds vector indexes after upload
+- useful for bootstrapping operations documents and testing RAG behavior
 
-如需重新导入目录文档：
+To re-import directory documents:
 
 ```bash
 make upload
 ```
 
-## Skills 扩展
+## Skills
 
-项目已接入 Spring AI 官方 Skills 机制，技能目录如下：
+The project integrates the official Spring AI Skills mechanism:
 
 ```text
 src/main/resources/skills/
@@ -225,17 +294,17 @@ src/main/resources/skills/
     └── SKILL.md
 ```
 
-当前已启用技能：
+Currently enabled skill:
 
-- `web-search`：通过 `searchWeb` 工具执行联网搜索，并将结果纳入生成链路
+- `web-search`: invokes `searchWeb` to fetch public web information and inject it into the generation pipeline
 
-这使得项目同时具备内部知识检索和外部实时信息补充两种能力来源。
+This gives the system two complementary sources of augmentation: internal document retrieval and external real-time information.
 
-## 配置说明
+## Configuration
 
-主要运行配置位于 `src/main/resources/application.yml`。
+Primary runtime configuration lives in `src/main/resources/application.yml`.
 
-关键项包括：
+Important settings include:
 
 - `server.port=8600`
 - `spring.datasource.url=jdbc:mysql://localhost:3390/aiops_agent...`
@@ -253,71 +322,72 @@ src/main/resources/skills/
 - `search.enabled=true`
 - `search.provider=tavily`
 
-生产环境建议：
+Production recommendations:
 
-- 使用环境变量或私有配置覆盖模型与搜索密钥
-- 替换默认 JWT Secret
-- 根据部署资源调优超时和重试参数
+- override model and search secrets via environment variables or private configuration
+- replace the default JWT secret
+- tune timeout and retry settings based on deployment resources
 
-推荐环境变量示例：
+Suggested environment variables:
 
 ```bash
 export DASHSCOPE_API_KEY=your-dashscope-key
 export TAVILY_API_KEY=your-tavily-key
 ```
 
-## Docker Compose 组成
+## Docker Compose Layout
 
-`docker-compose.yml` 当前包含以下服务：
+The current `docker-compose.yml` includes:
 
 - `mysql`
 - `redis`
 - `etcd`
 - `minio`
-- `standalone`（Milvus）
+- `standalone` (Milvus)
 - `attu`
-- `app`（通过 `app profile` 启用）
+- `app` (enabled via the `app` profile)
 
-端口映射：
+Port mapping:
 
 - `mysql -> 3390`
 - `redis -> 6379`
 - `milvus -> 19530`
 - `app -> 8600`
 
-`app` 服务依赖 `mysql`、`redis`、`standalone` 健康检查通过后再启动，适合完整容器化部署。
+The `app` service waits for `mysql`, `redis`, and `standalone` to become healthy before starting, which makes it suitable for full containerized deployment.
 
-## 项目结构
+## Project Layout
 
 ```text
 ops-mind-agent/
-├── aiops-docs/                      # 运维知识文档目录
-├── mysql-init/                      # MySQL 初始化脚本
-├── docker-compose.yml               # 中间件与应用容器编排
-├── Makefile                         # 本地/服务器统一启动入口
+├── aiops-docs/                      # Operations knowledge documents
+├── mysql-init/                      # MySQL initialization scripts
+├── docker-compose.yml               # Infra and app container orchestration
+├── Makefile                         # Unified entry for local and server startup
 ├── src/main/java/com/ops/
-│   ├── agent/                       # Agent 工具与能力封装
-│   ├── auth/                        # 认证相关组件
-│   ├── config/                      # Spring 配置与 Skills 装配
-│   ├── controller/                  # Web API 入口
-│   ├── dto/                         # 请求与响应对象
-│   ├── entity/                      # MySQL 持久化实体
-│   ├── repository/                  # JPA 数据访问层
-│   ├── service/                     # 核心业务服务
-│   ├── service/session/             # 会话管理与上下文处理
-│   └── tool/                        # 业务工具定义
+│   ├── agent/                       # Agent tools and capability wrappers
+│   ├── auth/                        # Authentication components
+│   ├── config/                      # Spring configuration and Skills wiring
+│   ├── controller/                  # Web API layer
+│   ├── dto/                         # Request and response objects
+│   ├── entity/                      # MySQL persistence entities
+│   ├── repository/                  # JPA repositories
+│   ├── service/                     # Core business services
+│   ├── service/session/             # Session management and context handling
+│   └── tool/                        # Business tool definitions
 └── src/main/resources/
-    ├── application.yml              # 运行配置
-    ├── skills/                      # 官方 Skills 目录
-    └── static/                      # 前端静态页面
+    ├── application.yml              # Runtime configuration
+    ├── skills/                      # Official Skills directory
+    └── static/                      # Frontend static assets
 ```
 
-## 适用场景
+## Use Cases
 
-这个项目适合用于以下方向的原型验证或工程基础建设：
+This project is a strong starting point for:
 
-- 智能运维问答助手
-- 告警分析与运维报告生成
-- 企业内部知识问答与文档检索
-- 具备联网搜索能力的 Agent 应用
-- Spring AI / Skills / RAG 一体化实践项目
+- AI-driven operations assistants
+- alert interpretation and troubleshooting assistance
+- internal knowledge Q&A and document retrieval
+- public-news and official-announcement lookups
+- Spring AI / Skills / RAG integrated engineering practice
+- deployable internal copilots with session continuity and user isolation
