@@ -26,7 +26,12 @@ import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
@@ -49,6 +54,7 @@ import java.util.concurrent.Executors;
 public class ChatController {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatController.class);
+    private static final String SSE_EVENT_NAME = "message";
 
     @Autowired
     private AiOpsService aiOpsService;
@@ -186,18 +192,13 @@ public class ChatController {
      */
     @PostMapping(value = "/chat_stream", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
-        SseEmitter emitter = new SseEmitter(300000L);
+        SseEmitter emitter = createEmitter(300000L);
         Long userId = getCurrentUserId();
 
         // Step 1: 请求前置校验
         if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
             logger.warn("问题内容为空");
-            try {
-                emitter.send(SseEmitter.event().name("message").data(SseMessage.error("问题内容不能为空"), MediaType.APPLICATION_JSON));
-                emitter.complete();
-            } catch (IOException e) {
-                emitter.completeWithError(e);
-            }
+            sendSseErrorAndComplete(emitter, "问题内容不能为空", null);
             return emitter;
         }
 
@@ -209,38 +210,27 @@ public class ChatController {
                 ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
                 List<Map<String, String>> history = chatSessionService.getHistory(userId, session);
                 logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
-                // 创建 DashScope API 和 ChatModel
                 DashScopeApi dashScopeApi = chatService.createDashScopeApi();
                 DashScopeChatModel chatModel = chatService.createStandardChatModel(dashScopeApi);
-                // 记录可用工具
                 chatService.logAvailableTools();
 
                 logger.info("开始 ReactAgent 流式对话（支持自动工具调用）");
-                // 构建系统提示词（包含历史消息）
                 String systemPrompt = chatService.buildSystemPrompt(history);
-                // 创建 ReactAgent
                 ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
-                // 用于累积完整答案
                 StringBuilder fullAnswerBuilder = new StringBuilder();
                 Flux<NodeOutput> stream = agent.stream(request.getQuestion());
+
                 // Step 3: 订阅流式结果并转发到前端 SSE
                 stream.subscribe(
                         output -> {
                             try {
                                 if (output instanceof StreamingOutput streamingOutput) {
                                     OutputType type = streamingOutput.getOutputType();
-                                    // 处理模型推理的流式输出
                                     if (type == OutputType.AGENT_MODEL_STREAMING) {
-                                        // 流式增量内容，逐步显示
                                         String chunk = streamingOutput.message().getText();
                                         if (chunk != null && !chunk.isEmpty()) {
                                             fullAnswerBuilder.append(chunk);
-                                    // 实时发送到前端
-                                            emitter.send(SseEmitter.event()
-                                                    .name("message")
-                                                    .data(SseMessage.content(chunk), MediaType.APPLICATION_JSON));
-
-                                            logger.info("发送流式内容: {}", chunk);
+                                            sendSseContent(emitter, chunk, "发送流式内容");
                                         }
                                     } else if (type == OutputType.AGENT_MODEL_FINISHED) {
                                         logger.info("模型输出完成");
@@ -256,16 +246,8 @@ public class ChatController {
                             }
                         },
                         error -> {
-                            // 错误处理
                             logger.error("ReactAgent 流式对话失败", error);
-                            try {
-                                emitter.send(SseEmitter.event()
-                                        .name("message")
-                                        .data(SseMessage.error(error.getMessage()), MediaType.APPLICATION_JSON));
-                            } catch (IOException ex) {
-                                logger.error("发送错误消息失败", ex);
-                            }
-                            emitter.completeWithError(error);
+                            sendSseErrorAndComplete(emitter, error.getMessage(), error);
                         },
                         () -> {
                             try {
@@ -277,10 +259,7 @@ public class ChatController {
                                 chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
                                 logger.info("已更新会话历史 - SessionId: {}", session.getSessionId());
 
-                                emitter.send(SseEmitter.event()
-                                        .name("message")
-                                        .data(SseMessage.done(), MediaType.APPLICATION_JSON));
-                                emitter.complete();
+                                sendSseDoneAndComplete(emitter);
                             } catch (IOException e) {
                                 logger.error("发送完成消息失败", e);
                                 emitter.completeWithError(e);
@@ -290,14 +269,7 @@ public class ChatController {
 
             } catch (Exception e) {
                 logger.error("ReactAgent 对话初始化失败", e);
-                try {
-                    emitter.send(SseEmitter.event()
-                            .name("message")
-                            .data(SseMessage.error(e.getMessage()), MediaType.APPLICATION_JSON));
-                } catch (IOException ex) {
-                    logger.error("发送错误消息失败", ex);
-                }
-                emitter.completeWithError(e);
+                sendSseErrorAndComplete(emitter, e.getMessage(), e);
             }
         });
 
@@ -310,8 +282,7 @@ public class ChatController {
      */
     @PostMapping(value = "/ai_ops", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter aiOps(@RequestBody(required = false) ChatRequest request) {
-        // 10分钟超时（告警分析可能较慢）
-        SseEmitter emitter = new SseEmitter(600000L);
+        SseEmitter emitter = createEmitter(600000L);
         String requestSessionId = request != null ? request.getId() : null;
         Long userId = getCurrentUserId();
 
@@ -333,11 +304,8 @@ public class ChatController {
                         .build();
 
                 ToolCallback[] toolCallbacks = tools.getToolCallbacks();
+                sendSseMessage(emitter, SseMessage.progress("正在分析告警并生成报告，请稍候..."));
 
-                emitter.send(SseEmitter.event().name("message")
-                        .data(SseMessage.progress("正在分析告警并生成报告，请稍候..."), MediaType.APPLICATION_JSON));
-
-                // 采用与 /chat_stream 一致的流式推送模式
                 ReactAgent aiOpsAgent = aiOpsService.createStreamingAiOpsAgent(chatModel, toolCallbacks);
                 String taskPrompt = "你是企业级 SRE，接到了自动化告警排查任务。请结合工具调用并持续输出 Markdown 报告，要求边分析边输出，禁止编造。";
                 StringBuilder fullReportBuilder = new StringBuilder();
@@ -353,14 +321,11 @@ public class ChatController {
                                         String chunk = streamingOutput.message().getText();
                                         if (chunk != null && !chunk.isEmpty()) {
                                             fullReportBuilder.append(chunk);
-                                            emitter.send(SseEmitter.event()
-                                                    .name("message")
-                                                    .data(SseMessage.content(chunk), MediaType.APPLICATION_JSON));
+                                            sendSseContent(emitter, chunk, null);
                                         }
                                     } else if (type == OutputType.AGENT_TOOL_FINISHED) {
                                         logger.info("AIOps 工具调用完成: {}", output.node());
-                                        emitter.send(SseEmitter.event().name("message")
-                                                .data(SseMessage.progress("工具执行中: " + output.node()), MediaType.APPLICATION_JSON));
+                                        sendSseMessage(emitter, SseMessage.progress("工具执行中: " + output.node()));
                                     } else if (type == OutputType.AGENT_MODEL_FINISHED) {
                                         logger.info("AIOps 模型输出完成");
                                     }
@@ -372,13 +337,7 @@ public class ChatController {
                         },
                         error -> {
                             logger.error("AIOps 流式分析失败", error);
-                            try {
-                                emitter.send(SseEmitter.event().name("message")
-                                        .data(SseMessage.error("AI Ops 流程失败: " + error.getMessage()), MediaType.APPLICATION_JSON));
-                            } catch (IOException ex) {
-                                logger.error("发送错误消息失败", ex);
-                            }
-                            emitter.completeWithError(error);
+                            sendSseErrorAndComplete(emitter, "AI Ops 流程失败: " + error.getMessage(), error);
                         },
                         () -> {
                             try {
@@ -390,12 +349,9 @@ public class ChatController {
                                 logger.info("AI Ops 完整报告已写入会话上下文 - SessionId: {}", session.getSessionId());
 
                                 if (fullReport.isEmpty()) {
-                                    emitter.send(SseEmitter.event().name("message")
-                                            .data(SseMessage.content("⚠️ 流程已完成，但未生成有效报告内容。"), MediaType.APPLICATION_JSON));
+                                    sendSseMessage(emitter, SseMessage.content("⚠️ 流程已完成，但未生成有效报告内容。"));
                                 }
-                                emitter.send(SseEmitter.event().name("message")
-                                        .data(SseMessage.done(), MediaType.APPLICATION_JSON));
-                                emitter.complete();
+                                sendSseDoneAndComplete(emitter);
                             } catch (IOException e) {
                                 logger.error("发送完成消息失败", e);
                                 emitter.completeWithError(e);
@@ -405,13 +361,7 @@ public class ChatController {
 
             } catch (Exception e) {
                 logger.error("AI Ops 多 Agent 协作失败", e);
-                try {
-                    emitter.send(SseEmitter.event().name("message")
-                            .data(SseMessage.error("AI Ops 流程失败: " + e.getMessage()), MediaType.APPLICATION_JSON));
-                } catch (IOException ex) {
-                    logger.error("发送错误消息失败", ex);
-                }
-                emitter.completeWithError(e);
+                sendSseErrorAndComplete(emitter, "AI Ops 流程失败: " + e.getMessage(), e);
             }
         });
 
@@ -437,6 +387,45 @@ public class ChatController {
         } catch (Exception e) {
             logger.error("获取会话信息失败", e);
             return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    private SseEmitter createEmitter(long timeoutMillis) {
+        return new SseEmitter(timeoutMillis);
+    }
+
+    private void sendSseMessage(SseEmitter emitter, SseMessage message) throws IOException {
+        emitter.send(SseEmitter.event()
+                .name(SSE_EVENT_NAME)
+                .data(message, MediaType.APPLICATION_JSON));
+    }
+
+    private void sendSseContent(SseEmitter emitter, String chunk, String logPrefix) throws IOException {
+        sendSseMessage(emitter, SseMessage.content(chunk));
+        if (logPrefix != null && !logPrefix.isBlank()) {
+            logger.info("{}: {}", logPrefix, chunk);
+        }
+    }
+
+    private void sendSseDoneAndComplete(SseEmitter emitter) throws IOException {
+        sendSseMessage(emitter, SseMessage.done());
+        emitter.complete();
+    }
+
+    private void sendSseErrorAndComplete(SseEmitter emitter, String message, Throwable error) {
+        try {
+            sendSseMessage(emitter, SseMessage.error(message));
+        } catch (IOException e) {
+            logger.error("发送错误消息失败", e);
+            if (error == null) {
+                error = e;
+            }
+        }
+
+        if (error == null) {
+            emitter.complete();
+        } else {
+            emitter.completeWithError(error);
         }
     }
 
