@@ -44,7 +44,7 @@ spring:
           initial-interval: 2000  # 初始重试间隔2秒
           multiplier: 2  # 重试间隔倍数
           max-interval: 10000  # 最大重试间隔10秒
-    
+
     # Spring AI MCP 客户端配置
     # 如果使用mock数据，请注释这部分内容
     mcp:
@@ -94,6 +94,14 @@ chat:
     max-window-size: 6
     context-cache:
       ttl-minutes: 60
+  stream:
+    executor:
+      core-size: 4
+      max-size: 16
+      queue-capacity: 100
+      keep-alive-seconds: 60
+      await-termination-seconds: 30
+      thread-name-prefix: chat-stream-
 
 auth:
   jwt:

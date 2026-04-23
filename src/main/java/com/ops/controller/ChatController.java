@@ -24,8 +24,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,15 +41,13 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * 统一 API 控制器
- * 适配前端接口需求，负责三类能力：
- * 1) 普通问答（/chat）
- * 2) 流式问答（/chat_stream）
- * 3) AIOps 多 Agent 分析（/ai_ops）
+ * 统一 API 控制器。
+ * 负责普通问答、流式问答以及 AI Ops 自动分析三类能力的接口编排，
+ * 并在控制层统一处理会话读取、SSE 消息转发和异常返回。
  */
 @RestController
 @RequestMapping("/api")
@@ -55,6 +55,7 @@ public class ChatController {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatController.class);
     private static final String SSE_EVENT_NAME = "message";
+    private static final String STREAM_BUSY_MESSAGE = "当前请求较多，请稍后再试";
 
     @Autowired
     private AiOpsService aiOpsService;
@@ -68,11 +69,13 @@ public class ChatController {
     @Autowired
     private ChatSessionService chatSessionService;
 
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    @Autowired
+    @Qualifier("chatStreamTaskExecutor")
+    private ThreadPoolTaskExecutor chatStreamTaskExecutor;
 
     /**
-     * 普通对话接口（支持工具调用）
-     * 与 /chat_react 逻辑一致，但直接返回完整结果而非流式输出
+     * 普通对话接口（支持工具调用）。
+     * 与流式接口复用同一套会话上下文，但以一次性返回完整答案为主。
      */
     @PostMapping("/chat")
     public ResponseEntity<ApiResponse<ChatResponse>> chat(@RequestBody ChatRequest request) {
@@ -80,33 +83,30 @@ public class ChatController {
             logger.info("收到对话请求 - SessionId: {}, Question: {}", request.getId(), request.getQuestion());
             Long userId = getCurrentUserId();
 
-            // Step 1: 参数校验，避免空问题触发模型调用
+            // Step 1: 参数校验，避免空问题触发模型调用。
             if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
                 logger.warn("问题内容为空");
                 return ResponseEntity.ok(ApiResponse.success(ChatResponse.error("问题内容不能为空")));
             }
 
-            // Step 2: 读取会话历史，提供多轮上下文
+            // Step 2: 读取会话历史，提供多轮上下文。
             ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
             List<Map<String, String>> history = chatSessionService.getHistory(userId, session);
             logger.info("会话历史消息对数: {}", history.size() / 2);
 
-            // Step 3: 创建模型与 Agent（包含工具与系统提示词）
+            // Step 3: 创建模型与 Agent（包含工具与系统提示词）。
             DashScopeApi dashScopeApi = chatService.createDashScopeApi();
             DashScopeChatModel chatModel = chatService.createStandardChatModel(dashScopeApi);
             chatService.logAvailableTools();
             logger.info("开始 ReactAgent 对话（支持自动工具调用）");
-            // 构建系统提示词（包含历史消息）
             String systemPrompt = chatService.buildSystemPrompt(history);
-            // 创建 ReactAgent
             ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
-            // 执行对话
             String fullAnswer = chatService.executeChat(agent, request.getQuestion());
-            // Step 4: 回写会话历史并返回结果
+
+            // Step 4: 回写会话历史并返回结果。
             chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
             logger.info("已更新会话历史 - SessionId: {}", session.getSessionId());
             return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fullAnswer)));
-
         } catch (Exception e) {
             logger.error("对话失败", e);
             return ResponseEntity.ok(ApiResponse.success(ChatResponse.error(e.getMessage())));
@@ -114,7 +114,7 @@ public class ChatController {
     }
 
     /**
-     * 清空会话历史
+     * 清空指定会话的历史消息。
      */
     @PostMapping("/chat/clear")
     public ResponseEntity<ApiResponse<String>> clearChatHistory(@RequestBody ClearRequest request) {
@@ -128,10 +128,8 @@ public class ChatController {
 
             if (chatSessionService.clearHistory(userId, request.getId())) {
                 return ResponseEntity.ok(ApiResponse.success("会话历史已清空"));
-            } else {
-                return ResponseEntity.ok(ApiResponse.error("会话不存在"));
             }
-
+            return ResponseEntity.ok(ApiResponse.error("会话不存在"));
         } catch (Exception e) {
             logger.error("清空会话历史失败", e);
             return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
@@ -139,7 +137,7 @@ public class ChatController {
     }
 
     /**
-     * 保存前端“近期对话”列表（用于跨浏览器共享）
+     * 保存前端“近期对话”列表，便于跨刷新和跨浏览器同步展示。
      */
     @PostMapping("/chat/histories")
     public ResponseEntity<ApiResponse<String>> saveChatHistories(@RequestBody List<Map<String, Object>> histories) {
@@ -154,7 +152,7 @@ public class ChatController {
     }
 
     /**
-     * 获取前端“近期对话”列表（用于跨浏览器读取）
+     * 获取前端“近期对话”列表，供左侧会话导航回显。
      */
     @GetMapping("/chat/histories")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getChatHistories() {
@@ -169,13 +167,14 @@ public class ChatController {
     }
 
     /**
-     * 获取指定会话的完整消息历史（用于前端会话详情展示）
+     * 获取指定会话的完整消息历史，用于前端回显完整上下文。
      */
     @GetMapping("/chat/session/messages/{sessionId}")
     public ResponseEntity<ApiResponse<List<Map<String, String>>>> getSessionMessages(@PathVariable String sessionId) {
         try {
             Long userId = getCurrentUserId();
-            Optional<List<Map<String, String>>> messagesOptional = chatSessionService.getSessionMessages(userId, sessionId);
+            Optional<List<Map<String, String>>> messagesOptional =
+                    chatSessionService.getSessionMessages(userId, sessionId);
             if (messagesOptional.isPresent()) {
                 return ResponseEntity.ok(ApiResponse.success(messagesOptional.get()));
             }
@@ -187,26 +186,28 @@ public class ChatController {
     }
 
     /**
-     * ReactAgent 对话接口（SSE 流式模式，支持多轮对话，支持自动工具调用，例如获取当前时间，查询日志，告警等）
-     * 支持 session 管理，保留对话历史
+     * ReactAgent 对话接口（SSE 流式模式）。
+     * 接口启动时只负责提交任务，真正的流式生成在有界线程池中执行，
+     * 以避免长连接请求无限制占用新线程。
      */
     @PostMapping(value = "/chat_stream", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
         SseEmitter emitter = createEmitter(300000L);
         Long userId = getCurrentUserId();
 
-        // Step 1: 请求前置校验
+        // Step 1: 请求前置校验。
         if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
             logger.warn("问题内容为空");
             sendSseErrorAndComplete(emitter, "问题内容不能为空", null);
             return emitter;
         }
 
-        executor.execute(() -> {
+        submitStreamingTask(emitter, "chat_stream", () -> {
             try {
-                logger.info("收到 ReactAgent 对话请求 - SessionId: {}, Question: {}", request.getId(), request.getQuestion());
+                logger.info("收到 ReactAgent 对话请求 - SessionId: {}, Question: {}",
+                        request.getId(), request.getQuestion());
 
-                // Step 2: 构建上下文与 Agent
+                // Step 2: 构建上下文与 Agent。
                 ChatSession session = chatSessionService.getOrCreateSession(userId, request.getId());
                 List<Map<String, String>> history = chatSessionService.getHistory(userId, session);
                 logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
@@ -220,7 +221,7 @@ public class ChatController {
                 StringBuilder fullAnswerBuilder = new StringBuilder();
                 Flux<NodeOutput> stream = agent.stream(request.getQuestion());
 
-                // Step 3: 订阅流式结果并转发到前端 SSE
+                // Step 3: 订阅流式结果并转发到前端 SSE。
                 stream.subscribe(
                         output -> {
                             try {
@@ -255,10 +256,9 @@ public class ChatController {
                                 logger.info("ReactAgent 流式对话完成 - SessionId: {}, 答案长度: {}",
                                         session.getSessionId(), fullAnswer.length());
 
-                                // Step 4: 流结束后统一回写会话
+                                // Step 4: 流结束后统一回写会话。
                                 chatSessionService.addMessage(userId, session, request.getQuestion(), fullAnswer);
                                 logger.info("已更新会话历史 - SessionId: {}", session.getSessionId());
-
                                 sendSseDoneAndComplete(emitter);
                             } catch (IOException e) {
                                 logger.error("发送完成消息失败", e);
@@ -266,7 +266,6 @@ public class ChatController {
                             }
                         }
                 );
-
             } catch (Exception e) {
                 logger.error("ReactAgent 对话初始化失败", e);
                 sendSseErrorAndComplete(emitter, e.getMessage(), e);
@@ -277,8 +276,8 @@ public class ChatController {
     }
 
     /**
-     * AI 智能运维接口（SSE 流式模式）- 自动分析告警并生成运维报告
-     * 无需用户输入，自动执行告警分析流程
+     * AI 智能运维接口（SSE 流式模式）。
+     * 无需用户输入，自动执行告警分析流程，并将完整报告写入会话上下文。
      */
     @PostMapping(value = "/ai_ops", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter aiOps(@RequestBody(required = false) ChatRequest request) {
@@ -286,12 +285,12 @@ public class ChatController {
         String requestSessionId = request != null ? request.getId() : null;
         Long userId = getCurrentUserId();
 
-        executor.execute(() -> {
+        submitStreamingTask(emitter, "ai_ops", () -> {
             try {
                 ChatSession session = chatSessionService.getOrCreateSession(userId, requestSessionId);
                 logger.info("收到 AI 智能运维请求 - SessionId: {}, 启动多 Agent 协作流程", session.getSessionId());
 
-                // Step 1: 初始化 AIOps 专用模型参数
+                // Step 1: 初始化 AIOps 专用模型参数。
                 DashScopeApi dashScopeApi = chatService.createDashScopeApi();
                 DashScopeChatModel chatModel = DashScopeChatModel.builder()
                         .dashScopeApi(dashScopeApi)
@@ -316,7 +315,6 @@ public class ChatController {
                             try {
                                 if (output instanceof StreamingOutput streamingOutput) {
                                     OutputType type = streamingOutput.getOutputType();
-
                                     if (type == OutputType.AGENT_MODEL_STREAMING) {
                                         String chunk = streamingOutput.message().getText();
                                         if (chunk != null && !chunk.isEmpty()) {
@@ -344,7 +342,7 @@ public class ChatController {
                                 String fullReport = fullReportBuilder.toString();
                                 logger.info("AIOps 流式分析完成，报告长度: {}", fullReport.length());
 
-                                // Step 2: 回写 AI Ops 完整报告到会话历史，供后续 chat/chat_stream 追问复用
+                                // Step 2: 回写 AI Ops 完整报告到会话历史，供后续追问复用。
                                 chatSessionService.addAiOpsReport(userId, session, fullReport);
                                 logger.info("AI Ops 完整报告已写入会话上下文 - SessionId: {}", session.getSessionId());
 
@@ -358,7 +356,6 @@ public class ChatController {
                             }
                         }
                 );
-
             } catch (Exception e) {
                 logger.error("AI Ops 多 Agent 协作失败", e);
                 sendSseErrorAndComplete(emitter, "AI Ops 流程失败: " + e.getMessage(), e);
@@ -369,7 +366,7 @@ public class ChatController {
     }
 
     /**
-     * 获取会话信息
+     * 获取指定会话的基础信息。
      */
     @GetMapping("/chat/session/{sessionId}")
     public ResponseEntity<ApiResponse<SessionInfoResponse>> getSessionInfo(@PathVariable String sessionId) {
@@ -380,26 +377,75 @@ public class ChatController {
             Optional<SessionInfoResponse> responseOptional = chatSessionService.getSessionInfo(userId, sessionId);
             if (responseOptional.isPresent()) {
                 return ResponseEntity.ok(ApiResponse.success(responseOptional.get()));
-            } else {
-                return ResponseEntity.ok(ApiResponse.error("会话不存在"));
             }
-
+            return ResponseEntity.ok(ApiResponse.error("会话不存在"));
         } catch (Exception e) {
             logger.error("获取会话信息失败", e);
             return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
         }
     }
 
+    /**
+     * 创建 SSE 发射器。
+     */
     private SseEmitter createEmitter(long timeoutMillis) {
         return new SseEmitter(timeoutMillis);
     }
 
+    /**
+     * 将流式任务提交到有界线程池。
+     * 当线程池已满时，直接通过 SSE 返回拥塞提示，避免请求无限等待。
+     */
+    private void submitStreamingTask(SseEmitter emitter, String scene, Runnable task) {
+        try {
+            logExecutorStatus(scene);
+            chatStreamTaskExecutor.execute(() -> {
+                try {
+                    task.run();
+                } catch (Exception e) {
+                    logger.error("流式任务执行异常 - Scene: {}", scene, e);
+                    sendSseErrorAndComplete(emitter, "服务处理异常，请稍后再试", e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            logger.warn("流式任务被线程池拒绝 - Scene: {}", scene, e);
+            logExecutorStatus(scene + "-rejected");
+            sendSseErrorAndComplete(emitter, STREAM_BUSY_MESSAGE, null);
+        }
+    }
+
+    /**
+     * 记录线程池当前状态，便于观察流式并发压力。
+     */
+    private void logExecutorStatus(String scene) {
+        ThreadPoolExecutor executor = chatStreamTaskExecutor.getThreadPoolExecutor();
+        if (executor == null) {
+            logger.info("流式线程池未完成初始化 - Scene: {}", scene);
+            return;
+        }
+
+        logger.info(
+                "流式线程池状态 - Scene: {}, PoolSize: {}, Active: {}, QueueSize: {}, Completed: {}",
+                scene,
+                executor.getPoolSize(),
+                executor.getActiveCount(),
+                executor.getQueue().size(),
+                executor.getCompletedTaskCount()
+        );
+    }
+
+    /**
+     * 发送通用 SSE 消息。
+     */
     private void sendSseMessage(SseEmitter emitter, SseMessage message) throws IOException {
         emitter.send(SseEmitter.event()
                 .name(SSE_EVENT_NAME)
                 .data(message, MediaType.APPLICATION_JSON));
     }
 
+    /**
+     * 发送正文分片，并按需记录发送日志。
+     */
     private void sendSseContent(SseEmitter emitter, String chunk, String logPrefix) throws IOException {
         sendSseMessage(emitter, SseMessage.content(chunk));
         if (logPrefix != null && !logPrefix.isBlank()) {
@@ -407,11 +453,17 @@ public class ChatController {
         }
     }
 
+    /**
+     * 发送完成事件并关闭 SSE。
+     */
     private void sendSseDoneAndComplete(SseEmitter emitter) throws IOException {
         sendSseMessage(emitter, SseMessage.done());
         emitter.complete();
     }
 
+    /**
+     * 发送错误事件并结束 SSE。
+     */
     private void sendSseErrorAndComplete(SseEmitter emitter, String message, Throwable error) {
         try {
             sendSseMessage(emitter, SseMessage.error(message));
@@ -429,6 +481,9 @@ public class ChatController {
         }
     }
 
+    /**
+     * 获取当前登录用户 ID。
+     */
     private Long getCurrentUserId() {
         AuthUser authUser = AuthContext.getCurrentUser();
         if (authUser == null || authUser.getUserId() == null) {
